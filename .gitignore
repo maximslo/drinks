@@ -1,0 +1,9 @@
+.env
+data/drinks.db
+__pycache__/
+*.pyc
+venv/
+.DS_Store
+
+# Ignore iMessage attachments
+data/attachments/
