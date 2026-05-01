@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import mimetypes
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -145,6 +146,8 @@ def get_messages(
             resolved_name = PHONE_TO_NAME.get(r["phone"], r["phone"] or "Unknown")
         raw_text = r["text"] or ""
         text = raw_text.lstrip("￼").strip() or None
+        attach_path = r["attachment_path"]
+        attach_mime = mimetypes.guess_type(attach_path)[0] if attach_path else None
         messages.append({
             "rowid": r["rowid"],
             "phone": r["phone"],
@@ -153,7 +156,8 @@ def get_messages(
             "sent_at": r["sent_at"],
             "is_from_me": r["is_from_me"],
             "has_attachment": r["has_attachment"],
-            "attachment_path": r["attachment_path"],
+            "attachment_path": attach_path,
+            "attachment_mime": attach_mime,
             "is_reaction": r["is_reaction"],
         })
 

@@ -1,3 +1,18 @@
+<!--
+  HOW TO RUN:
+  1. Sync latest messages:
+       cd ~/drinks && python3 scripts/sync_messages.py
+  2. Start the API:
+       cd ~/drinks && source venv/bin/activate && uvicorn api.main:app --reload
+  3. Open this file in your browser:
+       file:///Users/admin/drinks/frontend/messages.html
+
+  ONE-TIME / RECOVERY COMMANDS:
+    python3 scripts/sync_messages.py --backfill        # re-sync full history
+    python3 scripts/sync_messages.py --fix-text        # recover missing message text
+    python3 scripts/sync_messages.py --fix-attachments # copy missing photos/videos
+    python3 scripts/sync_messages.py --fix-heic        # convert HEIC photos to JPEG
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -238,6 +253,7 @@
 <div id="main">
   <div id="toolbar">
     <h1>🍺 One Beer at a Time</h1>
+    <div>local mac mini data, remember to sync!</div>
     <input id="search" type="text" placeholder="Search messages…">
   </div>
   <div id="load-older" class="hidden">
@@ -284,7 +300,9 @@
       const res = await fetch(url);
       data = await res.json();
     } catch (e) {
-      document.getElementById('status').textContent = 'Could not reach API — is the server running?';
+      const s = document.getElementById('status');
+      if (s) s.textContent = 'Could not reach API — is the server running?';
+      console.error('fetch failed', e);
       return;
     }
 
@@ -299,10 +317,10 @@
 
   async function loadOlder() {
     const feed = document.getElementById('chat-feed');
-    const anchor = feed.firstElementChild;
+    const prevScrollHeight = feed.scrollHeight;
     await fetchMessages(false);
     requestAnimationFrame(() => {
-      if (anchor) anchor.scrollIntoView({ block: 'start', behavior: 'instant' });
+      feed.scrollTop = feed.scrollHeight - prevScrollHeight;
     });
   }
 
@@ -310,11 +328,6 @@
 
   function render(reset, newCount) {
     const feed = document.getElementById('chat-feed');
-    document.getElementById('status').remove && (() => {
-      const s = document.getElementById('status');
-      if (s) s.remove();
-    })();
-
     const statusEl = document.getElementById('status');
     if (statusEl) statusEl.remove();
 
@@ -399,19 +412,28 @@
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
 
-    // image
+    // attachment
     if (msg.has_attachment) {
-      const img = document.createElement('img');
-      img.src = `${API}/attachment/${msg.rowid}`;
-      img.loading = 'lazy';
-      img.alt = 'Photo';
-      img.onerror = function() {
-        this.replaceWith(Object.assign(document.createElement('span'), {
-          className: 'attachment-placeholder', textContent: '📷 Photo'
-        }));
-      };
-      img.onclick = e => { e.stopPropagation(); openLightbox(img.src); };
-      bubble.appendChild(img);
+      const isVideo = (msg.attachment_mime || '').startsWith('video/');
+      if (isVideo) {
+        const video = document.createElement('video');
+        video.src = `${API}/attachment/${msg.rowid}`;
+        video.controls = true;
+        video.style.cssText = 'display:block;max-width:240px;max-height:320px;border-radius:10px;';
+        bubble.appendChild(video);
+      } else {
+        const img = document.createElement('img');
+        img.src = `${API}/attachment/${msg.rowid}`;
+        img.loading = 'lazy';
+        img.alt = 'Photo';
+        img.onerror = function() {
+          this.replaceWith(Object.assign(document.createElement('span'), {
+            className: 'attachment-placeholder', textContent: '📷 Photo'
+          }));
+        };
+        img.onclick = e => { e.stopPropagation(); openLightbox(img.src); };
+        bubble.appendChild(img);
+      }
     }
 
     // text

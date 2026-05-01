@@ -2,6 +2,7 @@ import sqlite3
 import argparse
 import os
 import shutil
+import subprocess
 from datetime import datetime, timezone
 
 CHAT_DB = os.path.expanduser("~/Library/Messages/chat.db")
@@ -163,7 +164,7 @@ def fetch_from_chat_db(chat_conn, last_rowid):
         LEFT JOIN handle h ON m.handle_id = h.ROWID
         LEFT JOIN message_attachment_join maj ON m.ROWID = maj.message_id
         LEFT JOIN attachment a ON maj.attachment_id = a.ROWID
-            AND a.mime_type LIKE 'image/%'
+            AND (a.mime_type LIKE 'image/%' OR a.mime_type LIKE 'video/%')
         WHERE c.chat_identifier = ?
           AND m.ROWID > ?
         ORDER BY m.ROWID ASC, a.ROWID ASC
@@ -189,11 +190,50 @@ def copy_attachment(rowid, src_path):
     if not os.path.exists(src):
         return None
     ext = src_path.rsplit('.', 1)[-1].lower() if '.' in src_path else 'jpg'
+    if ext == 'heic':
+        dst = os.path.join(ATTACHMENTS_DIR, f"{rowid}.jpg")
+        if not os.path.exists(dst):
+            r = subprocess.run(
+                ['sips', '-s', 'format', 'jpeg', src, '--out', dst],
+                capture_output=True
+            )
+            if r.returncode != 0 or not os.path.exists(dst):
+                return None
+        return f"attachments/{rowid}.jpg"
     dst = os.path.join(ATTACHMENTS_DIR, f"{rowid}.{ext}")
     if os.path.exists(dst):
         return f"attachments/{rowid}.{ext}"
     shutil.copy2(src, dst)
     return f"attachments/{rowid}.{ext}"
+
+
+def fix_heic(msg_conn, verbose):
+    """Convert existing .heic files to .jpg and update DB paths."""
+    rows = msg_conn.execute(
+        "SELECT rowid FROM messages WHERE attachment_path LIKE '%.heic'"
+    ).fetchall()
+    count = 0
+    for (rowid,) in rows:
+        src = os.path.join(ATTACHMENTS_DIR, f"{rowid}.heic")
+        dst = os.path.join(ATTACHMENTS_DIR, f"{rowid}.jpg")
+        if not os.path.exists(src):
+            continue
+        if not os.path.exists(dst):
+            r = subprocess.run(
+                ['sips', '-s', 'format', 'jpeg', src, '--out', dst],
+                capture_output=True
+            )
+            if r.returncode != 0 or not os.path.exists(dst):
+                continue
+        msg_conn.execute(
+            "UPDATE messages SET attachment_path = ? WHERE rowid = ?",
+            (f"attachments/{rowid}.jpg", rowid)
+        )
+        count += 1
+        if verbose:
+            print(f"  Converted ROWID={rowid}")
+    msg_conn.commit()
+    return count
 
 
 def upsert_messages(msg_conn, rows, verbose):
@@ -286,7 +326,7 @@ def backfill_missing_attachments(msg_conn, chat_conn, verbose):
             FROM message_attachment_join maj
             JOIN attachment a ON maj.attachment_id = a.ROWID
             WHERE maj.message_id IN ({placeholders})
-              AND a.mime_type LIKE 'image/%'
+              AND (a.mime_type LIKE 'image/%' OR a.mime_type LIKE 'video/%')
             ORDER BY maj.message_id ASC, a.ROWID ASC
         """, chunk).fetchall()
 
@@ -314,6 +354,8 @@ def main():
     parser = argparse.ArgumentParser(description="Sync iMessage beer chat to local messages.db")
     parser.add_argument("--backfill", action="store_true", help="Sync all history from ROWID 0")
     parser.add_argument("--fix-text", action="store_true", help="Re-parse attributedBody for existing NULL-text rows only")
+    parser.add_argument("--fix-attachments", action="store_true", help="Copy missing attachment files for existing rows")
+    parser.add_argument("--fix-heic", action="store_true", help="Convert existing .heic attachments to .jpg")
     parser.add_argument("--verbose", action="store_true", help="Print each row as it syncs")
     args = parser.parse_args()
 
@@ -323,6 +365,19 @@ def main():
     init_db(msg_conn)
 
     chat_conn = sqlite3.connect(f"file:{CHAT_DB}?mode=ro", uri=True)
+
+    if args.fix_heic:
+        print("[sync] Converting .heic attachments to .jpg...")
+        converted = fix_heic(msg_conn, args.verbose)
+        print(f"[sync] Converted {converted} files.")
+        return
+
+    if args.fix_attachments:
+        print("[sync] Backfilling missing attachments...")
+        filled = backfill_missing_attachments(msg_conn, chat_conn, args.verbose)
+        print(f"[sync] Copied {filled} attachment files.")
+        chat_conn.close()
+        return
 
     if args.fix_text:
         print("[sync] Re-parsing attributedBody for existing NULL-text rows...")
