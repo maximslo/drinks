@@ -7,3 +7,9 @@ venv/
 
 # Ignore iMessage attachments
 data/attachments/
+
+# Facial recognition — generated files and personal identity mappings
+facial/identities.json
+facial/database.npz
+embeddings.npy
+image_paths.npy
