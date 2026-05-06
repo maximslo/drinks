@@ -1,9 +1,12 @@
 import sqlite3
 import os
+import json
 import mimetypes
-from fastapi import FastAPI, HTTPException
+import asyncio
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from sse_starlette.sse import EventSourceResponse
 
 DRINKS_DB = os.path.expanduser("~/drinks/data/drinks.db")
 MESSAGES_DB = os.path.expanduser("~/drinks/data/messages.db")
@@ -21,7 +24,6 @@ PHONE_TO_NAME = {
     "jakestein120@icloud.com": "Jacob",
 }
 
-# reverse map: name -> all phones/emails for that name
 NAME_TO_PHONES = {}
 for phone, name in PHONE_TO_NAME.items():
     NAME_TO_PHONES.setdefault(name, []).append(phone)
@@ -35,6 +37,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+subscribers: list = []
+
+
+# ─── DB helpers ───────────────────────────────────────────────────────────────
+
 def get_db():
     conn = sqlite3.connect(DRINKS_DB)
     conn.row_factory = sqlite3.Row
@@ -45,17 +52,63 @@ def get_messages_db():
     conn.row_factory = sqlite3.Row
     return conn
 
-@app.get("/leaderboard")
-def leaderboard():
+def get_leaderboard_data():
     conn = get_db()
     rows = conn.execute("""
-        SELECT person, COUNT(*) as total
+        SELECT person, COUNT(*) as total, MAX(drink_number) as latest_drink_number
         FROM drinks
         GROUP BY person
         ORDER BY total DESC
     """).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ─── SSE leaderboard ──────────────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def startup():
+    asyncio.create_task(watch_drinks_db())
+
+async def watch_drinks_db():
+    last_snapshot = None
+    while True:
+        await asyncio.sleep(1)
+        try:
+            current = get_leaderboard_data()
+            if current != last_snapshot:
+                last_snapshot = current
+                for q in subscribers:
+                    await q.put(current)
+        except Exception:
+            pass
+
+@app.get("/leaderboard/stream")
+async def leaderboard_stream(request: Request):
+    async def event_gen():
+        q: asyncio.Queue = asyncio.Queue()
+        subscribers.append(q)
+        try:
+            yield {"data": json.dumps(get_leaderboard_data())}
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    data = await asyncio.wait_for(q.get(), timeout=30)
+                    yield {"data": json.dumps(data)}
+                except asyncio.TimeoutError:
+                    yield {"comment": "keepalive"}
+        finally:
+            if q in subscribers:
+                subscribers.remove(q)
+    return EventSourceResponse(event_gen())
+
+
+# ─── REST endpoints ───────────────────────────────────────────────────────────
+
+@app.get("/leaderboard")
+def leaderboard():
+    return get_leaderboard_data()
 
 @app.get("/drinks")
 def drinks(limit: int = 50, offset: int = 0, person: str = None):
@@ -123,7 +176,7 @@ def get_messages(
             conditions.append(f"phone IN ({placeholders})")
             params.extend(phones)
         else:
-            conditions.append("1 = 0")  # unknown name → no results
+            conditions.append("1 = 0")
 
     if search:
         conditions.append("text LIKE ?")
@@ -140,12 +193,8 @@ def get_messages(
 
     messages = []
     for r in rows:
-        if r["is_from_me"]:
-            resolved_name = "Maxim"
-        else:
-            resolved_name = PHONE_TO_NAME.get(r["phone"], r["phone"] or "Unknown")
-        raw_text = r["text"] or ""
-        text = raw_text.lstrip("￼").strip() or None
+        resolved_name = "Maxim" if r["is_from_me"] else PHONE_TO_NAME.get(r["phone"], r["phone"] or "Unknown")
+        text = (r["text"] or "").lstrip("￼").strip() or None
         attach_path = r["attachment_path"]
         attach_mime = mimetypes.guess_type(attach_path)[0] if attach_path else None
         messages.append({

@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🍺 Drink Leaderboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1c1c1e;
+      color: #f2f2f7;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #8e8e93;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #34c759;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+
+    .dot.live { animation: pulse 1.6s ease-in-out infinite; }
+    .dot.offline { background: #48484a; animation: none; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* Group progress card */
+    .progress-card {
+      background: #2c2c2e;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .progress-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #8e8e93;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 6px;
+    }
+
+    .progress-total {
+      font-size: 40px;
+      font-weight: 700;
+      letter-spacing: -1px;
+      margin-bottom: 4px;
+      line-height: 1;
+    }
+
+    .progress-total .goal {
+      font-size: 20px;
+      font-weight: 400;
+      color: #636366;
+    }
+
+    .progress-sub {
+      font-size: 13px;
+      color: #636366;
+      margin-bottom: 14px;
+    }
+
+    .bar-bg {
+      background: #3a3a3c;
+      border-radius: 6px;
+      height: 8px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #007aff 0%, #34c759 100%);
+      border-radius: 6px;
+      transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Leaderboard entries */
+    .list {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .entry {
+      display: flex;
+      align-items: center;
+      padding: 14px 0;
+      border-bottom: 1px solid #2c2c2e;
+      gap: 12px;
+      transition: opacity 0.3s;
+    }
+
+    .entry:last-child { border-bottom: none; }
+
+    .rank {
+      font-size: 15px;
+      font-weight: 600;
+      width: 32px;
+      flex-shrink: 0;
+      text-align: center;
+      color: #48484a;
+    }
+
+    .rank.top { color: #f2f2f7; }
+
+    .name {
+      flex: 1;
+      font-size: 17px;
+      font-weight: 500;
+    }
+
+    .count {
+      font-size: 17px;
+      font-weight: 600;
+      color: #007aff;
+      flex-shrink: 0;
+    }
+
+    .mini-bar-wrap {
+      width: 72px;
+      flex-shrink: 0;
+    }
+
+    .mini-bar-bg {
+      background: #3a3a3c;
+      border-radius: 3px;
+      height: 4px;
+      overflow: hidden;
+    }
+
+    .mini-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .updated {
+      margin-top: 24px;
+      font-size: 12px;
+      color: #3a3a3c;
+      text-align: center;
+    }
+
+    .empty {
+      text-align: center;
+      color: #48484a;
+      padding: 48px 0;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🍺 Leaderboard</h1>
+  <div class="live-badge">
+    <div class="dot offline" id="dot"></div>
+    <span id="live-text">Connecting…</span>
+  </div>
+</header>
+
+<div class="progress-card">
+  <div class="progress-label">Group Progress</div>
+  <div class="progress-total" id="total-display">— <span class="goal">/ 10,000</span></div>
+  <div class="progress-sub" id="remaining-display"></div>
+  <div class="bar-bg"><div class="bar-fill" id="group-bar" style="width:0%"></div></div>
+</div>
+
+<div class="list" id="list">
+  <div class="empty">Waiting for data…</div>
+</div>
+
+<div class="updated" id="updated"></div>
+
+<script>
+  const API   = window.location.origin;
+  const GOAL  = 10000;
+
+  // Deterministic hue per name (same as messages.html)
+  function nameHue(name) {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
+    return h % 360;
+  }
+
+  function render(data) {
+    const total   = data.reduce((s, r) => s + r.total, 0);
+    const maxItem = data.length ? data[0].total : 1;
+    const pct     = Math.min(100, (total / GOAL) * 100);
+
+    document.getElementById('total-display').innerHTML =
+      `${total.toLocaleString()} <span class="goal">/ ${GOAL.toLocaleString()}</span>`;
+    document.getElementById('remaining-display').textContent =
+      total < GOAL ? `${(GOAL - total).toLocaleString()} to go` : '🎉 Goal reached!';
+    document.getElementById('group-bar').style.width = pct + '%';
+
+    const MEDALS = ['🥇', '🥈', '🥉'];
+
+    document.getElementById('list').innerHTML = data.length ? data.map((row, i) => {
+      const hue   = nameHue(row.person);
+      const color = `hsl(${hue}, 70%, 55%)`;
+      const barPct = maxItem ? (row.total / maxItem * 100) : 0;
+      return `
+        <div class="entry">
+          <div class="rank ${i < 3 ? 'top' : ''}">${MEDALS[i] ?? i + 1}</div>
+          <div class="name" style="color:${color}">${row.person}</div>
+          <div class="count">${row.total}</div>
+          <div class="mini-bar-wrap">
+            <div class="mini-bar-bg">
+              <div class="mini-bar-fill" style="width:${barPct}%;background:${color}"></div>
+            </div>
+          </div>
+        </div>`;
+    }).join('') : '<div class="empty">No drinks logged yet.</div>';
+
+    document.getElementById('updated').textContent =
+      'Last update: ' + new Date().toLocaleTimeString();
+
+    // Pulse dot on each update
+    const dot = document.getElementById('dot');
+    dot.style.background = '#34c759';
+    setTimeout(() => { dot.style.background = ''; }, 300);
+  }
+
+  function connect() {
+    const dot  = document.getElementById('dot');
+    const text = document.getElementById('live-text');
+
+    const es = new EventSource(`${API}/leaderboard/stream`);
+
+    es.onopen = () => {
+      dot.className = 'dot live';
+      text.textContent = 'Live';
+    };
+
+    es.onmessage = (e) => render(JSON.parse(e.data));
+
+    es.onerror = () => {
+      dot.className = 'dot offline';
+      text.textContent = 'Reconnecting…';
+    };
+  }
+
+  connect();
+</script>
+</body>
+</html>

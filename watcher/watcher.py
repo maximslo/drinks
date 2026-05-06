@@ -3,21 +3,39 @@ import time
 import os
 import sys
 import re
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '../.env'))
 
 sys.path.insert(0, os.path.dirname(__file__))
-from parser import parse_drink_text, resolve_name
+from parser import parse_numbers, resolve_name
 from ai_parser import parse_ambiguous
 
 CHAT_DB = os.path.expanduser("~/Library/Messages/chat.db")
 DRINKS_DB = os.path.expanduser("~/drinks/data/drinks.db")
-CHAT_ID = "+17816714568"  # TEST: swap back to chat313739884378608609 for prod
+CHAT_ID = "chat313739884378608609"
 FLAG_LOG = os.path.expanduser("~/drinks/data/flagged.log")
-CONTEXT_WINDOW = 10
 POLL_INTERVAL = 2
+PENDING_TIMEOUT = 90
+
+
+# ─── Per-sender pending state ─────────────────────────────────────────────────
+
+@dataclass
+class PendingLog:
+    sender: str
+    photos: list = field(default_factory=list)   # [(rowid, date), ...]
+    numbers: list = field(default_factory=list)  # [(number, details, starred), ...]
+    started_at: float = field(default_factory=time.time)
+    raw_msgs: list = field(default_factory=list)
+    needs_math: bool = False
+
+pending: dict = {}  # handle_id → PendingLog
+
+
+# ─── drinks.db helpers ────────────────────────────────────────────────────────
 
 def init_drinks_db(conn):
     conn.execute("""
@@ -47,8 +65,15 @@ def set_last_processed(conn, imessage_id):
     conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_imessage_id', ?)", (imessage_id,))
     conn.commit()
 
+def get_last_drink_number(conn, person):
+    row = conn.execute("SELECT MAX(drink_number) FROM drinks WHERE person = ?", (person,)).fetchone()
+    return row[0] if row and row[0] is not None else None
+
+
+# ─── chat.db helpers ──────────────────────────────────────────────────────────
+
 def fetch_new_messages(chat_conn, last_id):
-    rows = chat_conn.execute("""
+    return chat_conn.execute("""
         SELECT
             message.ROWID,
             handle.id as handle_id,
@@ -63,19 +88,17 @@ def fetch_new_messages(chat_conn, last_id):
         AND message.ROWID > ?
         ORDER BY message.ROWID ASC
     """, (CHAT_ID, last_id)).fetchall()
-    return rows
 
-def is_range(text):
-    return bool(re.match(r'^\d+\s*-\s*\d+\s*$', text.strip())) if text else False
+
+# ─── Utilities ────────────────────────────────────────────────────────────────
 
 def is_reaction(text):
     if not text:
         return False
-    reactions = ["loved", "liked", "disliked", "laughed at", "emphasized", "questioned", "reacted"]
-    return any(text.lower().startswith(r) for r in reactions)
+    prefixes = ["loved", "liked", "disliked", "laughed at", "emphasized", "questioned", "reacted"]
+    return any(text.lower().startswith(p) for p in prefixes)
 
 def is_math_request(text):
-    """Detect 'someone do the math' style messages."""
     if not text:
         return False
     keywords = ["do the math", "someone count", "figure it out", "math pls", "math please"]
@@ -86,237 +109,216 @@ def apple_ts_to_str(date):
     ts = apple_epoch + date / 1e9
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
+def is_consecutive(nums):
+    """nums must be sorted descending."""
+    return all(nums[i] - nums[i + 1] == 1 for i in range(len(nums) - 1))
+
+def is_plausible(numbers, person, conn):
+    """True if these drink numbers could plausibly be this person's next log."""
+    last = get_last_drink_number(conn, person)
+    if last is None:
+        return True  # no history — accept anything
+    if any(starred for _, _, starred in numbers):
+        return True  # explicit correction
+    sorted_nums = sorted([n for n, _, _ in numbers], reverse=True)
+    expected = last + len(numbers)
+    return sorted_nums[0] == expected and is_consecutive(sorted_nums)
+
+
+# ─── Flagging ─────────────────────────────────────────────────────────────────
+
 def flag(reason, messages):
     with open(FLAG_LOG, "a") as f:
         f.write(f"\n[FLAGGED: {reason}]\n")
         for m in messages:
             f.write(f"  ROWID={m[0]} handle={m[1]} text={m[2]!r}\n")
 
-def resolve_drink_numbers(parsed):
-    if not parsed:
-        return [], False
-    if len(parsed) == 1:
-        return parsed, False
-    starred = [p for p in parsed if p[4]]
+
+# ─── Core logic ───────────────────────────────────────────────────────────────
+
+def save_drink(conn, drink_number, person, details, date, imessage_id, source):
+    try:
+        conn.execute("""
+            INSERT OR IGNORE INTO drinks (drink_number, person, details, date, imessage_id, source)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (drink_number, person, details, date, imessage_id, source))
+        conn.commit()
+        print(f"  Logged: #{drink_number} by {person}{' — ' + details if details else ''} [{source}]")
+    except Exception as e:
+        print(f"  Error saving #{drink_number}: {e}")
+
+def try_resolve(sender, drinks_conn):
+    """Attempt to log drinks for sender if we have both photo and number(s)."""
+    p = pending.get(sender)
+    if not p or not p.photos:
+        return
+    if not p.numbers and not p.needs_math:
+        return
+
+    photo_rowid, photo_date = p.photos[0]
+    person = resolve_name(sender)
+    dt = apple_ts_to_str(photo_date)
+
+    if p.needs_math:
+        ai_results = parse_ambiguous(p.raw_msgs, "MATH_REQUEST")
+        if ai_results:
+            for r in ai_results:
+                save_drink(drinks_conn, r["drink_number"], r["person"], r.get("details"), dt, photo_rowid, "ai")
+        else:
+            flag("MATH_REQUEST", p.raw_msgs)
+        del pending[sender]
+        return
+
+    # Starred = correction override — use the last starred number
+    starred = [(n, d, s) for n, d, s in p.numbers if s]
     if starred:
-        return [starred[0]], False
-    nums = [p[0] for p in parsed]
-    if all(nums[k] - nums[k+1] == 1 for k in range(len(nums)-1)):
-        return parsed, False
-    return [], True
+        num, details, _ = starred[-1]
+        save_drink(drinks_conn, num, person, details, dt, photo_rowid, "auto")
+        del pending[sender]
+        return
 
-def process_messages(messages):
-    drinks = []
-    processed = set()
-    i = 0
+    if len(p.numbers) == 1:
+        num, details, _ = p.numbers[0]
+        save_drink(drinks_conn, num, person, details, dt, photo_rowid, "auto")
+        del pending[sender]
+        return
 
-    while i < len(messages):
-        msg = messages[i]
-        rowid, handle_id, text, date, has_attachment = msg
+    # Multiple numbers — consecutive range goes to same person, otherwise AI
+    sorted_nums = sorted([n for n, _, _ in p.numbers], reverse=True)
+    if is_consecutive(sorted_nums):
+        for num, details, _ in sorted(p.numbers, key=lambda x: x[0], reverse=True):
+            save_drink(drinks_conn, num, person, details, dt, photo_rowid, "auto")
+        del pending[sender]
+        return
 
-        if rowid in processed or is_reaction(text):
-            i += 1
-            continue
+    ai_results = parse_ambiguous(p.raw_msgs, "AMBIGUOUS_MULTIPLE_NUMBERS")
+    if ai_results:
+        for r in ai_results:
+            save_drink(drinks_conn, r["drink_number"], r["person"], r.get("details"), dt, photo_rowid, "ai")
+    else:
+        flag("AMBIGUOUS_MULTIPLE_NUMBERS", p.raw_msgs)
+    del pending[sender]
 
-        # Case 1: number AND image in same message
-        if has_attachment and text:
-            num, details = parse_drink_text(text)
-            if num:
-                person = resolve_name(handle_id)
-                dt = apple_ts_to_str(date)
-                drinks.append({"drink_number": num, "person": person, "details": details, "date": dt, "imessage_id": rowid, "source": "auto"})
-                print(f"  Logged (same msg): #{num} by {person}")
-                processed.add(rowid)
-                i += 1
-                continue
+def handle_message(msg, drinks_conn):
+    rowid, handle_id, text, date, has_attachment = msg
 
-        # Case 2: image message — look forward for number(s)
-        if has_attachment:
-            image_msg = msg
-            image_sender = handle_id
-            image_date = date
-            parsed = []
-            following_msgs = []
+    if is_reaction(text):
+        return
 
-            j = i + 1
-            lookahead = 0
-            different_sender_num = None
-            needs_math = False
+    clean = (text or "").lstrip("￼").strip()  # strip iMessage attachment placeholder
+    numbers = parse_numbers(clean)
 
-            while j < len(messages) and lookahead < 5:
-                next_msg = messages[j]
-                next_rowid, next_handle, next_text, next_date, next_attachment = next_msg
+    # Case 1: photo + number(s) in same message — log immediately
+    if has_attachment and numbers:
+        person = resolve_name(handle_id)
+        dt = apple_ts_to_str(date)
+        for num, details, _ in numbers:
+            save_drink(drinks_conn, num, person, details, dt, rowid, "auto")
+        return
 
-                if is_reaction(next_text):
-                    j += 1
-                    continue
+    # Case 2: photo only — open/extend pending for this sender
+    if has_attachment:
+        if handle_id not in pending:
+            pending[handle_id] = PendingLog(sender=handle_id)
+        pending[handle_id].photos.append((rowid, date))
+        pending[handle_id].raw_msgs.append(msg)
+        try_resolve(handle_id, drinks_conn)
+        return
 
-                if next_handle == image_sender:
-                    # math request from same sender
-                    if is_math_request(next_text or ""):
-                        needs_math = True
-                        following_msgs.append(next_msg)
-                        processed.add(next_rowid)
-                        j += 1
-                        break
+    # Case 3: math request — flag pending for AI
+    if is_math_request(clean):
+        if handle_id in pending:
+            pending[handle_id].needs_math = True
+            pending[handle_id].raw_msgs.append(msg)
+            try_resolve(handle_id, drinks_conn)
+        return
 
-                    # range from same sender — use AI
-                    if next_text and is_range(next_text):
-                        before = messages[max(0, i-CONTEXT_WINDOW):i]
-                        after = messages[j+1:j+1+CONTEXT_WINDOW]
-                        ai_results = parse_ambiguous([image_msg, next_msg], "RANGE", before, after)
-                        if ai_results:
-                            dt = apple_ts_to_str(image_date)
-                            for r in ai_results:
-                                drinks.append({"drink_number": r["drink_number"], "person": r["person"], "details": r.get("details"), "date": dt, "imessage_id": next_rowid, "source": "ai"})
-                                print(f"  Logged (AI/range): #{r['drink_number']} by {r['person']}")
-                        else:
-                            flag("RANGE", [image_msg, next_msg])
-                        processed.add(next_rowid)
-                        j += 1
-                        break
+    # Case 4: number(s) only
+    if numbers:
+        person = resolve_name(handle_id)
 
-                    num, details = parse_drink_text(next_text)
-                    if num:
-                        starred = "*" in (next_text or "")
-                        parsed.append((num, details, next_date, next_rowid, starred))
-                        processed.add(next_rowid)
-                        following_msgs.append(next_msg)
-                        j += 1
-                        lookahead += 1
-                        continue
-                    elif next_attachment:
-                        break
-                    else:
-                        j += 1
-                        lookahead += 1
-                        continue
-                else:
-                    # different sender — check if it's a number or math request
-                    if next_text and not is_reaction(next_text):
-                        if is_math_request(next_text):
-                            needs_math = True
-                            following_msgs.append(next_msg)
-                            processed.add(next_rowid)
-                            j += 1
-                        elif not parsed:
-                            num, _ = parse_drink_text(next_text)
-                            if num:
-                                different_sender_num = next_msg
-                    break
+        # This sender already has a pending photo → pair with it
+        if handle_id in pending and pending[handle_id].photos:
+            pending[handle_id].numbers.extend(numbers)
+            pending[handle_id].raw_msgs.append(msg)
+            try_resolve(handle_id, drinks_conn)
+            return
 
-            # handle math request — use AI with context
-            if needs_math:
-                before = messages[max(0, i-CONTEXT_WINDOW):i]
-                after = messages[j:j+CONTEXT_WINDOW]
-                ai_results = parse_ambiguous([image_msg] + following_msgs, "MATH_REQUEST", before, after)
-                if ai_results:
-                    dt = apple_ts_to_str(image_date)
-                    for r in ai_results:
-                        drinks.append({"drink_number": r["drink_number"], "person": r["person"], "details": r.get("details"), "date": dt, "imessage_id": rowid, "source": "ai"})
-                        print(f"  Logged (AI/math): #{r['drink_number']} by {r['person']}")
-                else:
-                    flag("MATH_REQUEST", [image_msg] + following_msgs)
+        # No pending photo — validate before opening a pending window
+        if is_plausible(numbers, person, drinks_conn):
+            if handle_id not in pending:
+                pending[handle_id] = PendingLog(sender=handle_id)
+            pending[handle_id].numbers.extend(numbers)
+            pending[handle_id].raw_msgs.append(msg)
+            return  # waiting for photo
 
-            # different sender typed the number — attribute to IMAGE sender, no AI needed
-            elif different_sender_num and not parsed:
-                num, details = parse_drink_text(different_sender_num[2])
-                if num:
-                    person = resolve_name(image_sender)
-                    dt = apple_ts_to_str(image_date)
-                    drinks.append({"drink_number": num, "person": person, "details": details, "date": dt, "imessage_id": different_sender_num[0], "source": "auto"})
-                    print(f"  Logged (diff sender→img owner): #{num} by {person}")
+        # Not plausible for this sender — check if another sender's photo matches
+        for photo_sender, p in pending.items():
+            if p.photos and not p.numbers:
+                photo_person = resolve_name(photo_sender)
+                if is_plausible(numbers, photo_person, drinks_conn):
+                    p.numbers.extend(numbers)
+                    p.raw_msgs.append(msg)
+                    try_resolve(photo_sender, drinks_conn)
+                    return
+        # Truly unrelated — skip
 
-            # same sender numbers — apply correction/sequential rules
-            elif parsed:
-                to_log, should_flag = resolve_drink_numbers(parsed)
-                if should_flag:
-                    # ambiguous — use AI
-                    before = messages[max(0, i-CONTEXT_WINDOW):i]
-                    after = messages[j:j+CONTEXT_WINDOW]
-                    ai_results = parse_ambiguous([image_msg] + following_msgs, "AMBIGUOUS_MULTIPLE_NUMBERS", before, after)
-                    if ai_results:
-                        dt = apple_ts_to_str(image_date)
-                        for r in ai_results:
-                            drinks.append({"drink_number": r["drink_number"], "person": r["person"], "details": r.get("details"), "date": dt, "imessage_id": rowid, "source": "ai"})
-                            print(f"  Logged (AI/ambiguous): #{r['drink_number']} by {r['person']}")
-                    else:
-                        flag("AMBIGUOUS_MULTIPLE_NUMBERS", [image_msg] + following_msgs)
-                else:
-                    person = resolve_name(image_sender)
-                    dt = apple_ts_to_str(image_date)
-                    for num, details, _, rid, _ in to_log:
-                        drinks.append({"drink_number": num, "person": person, "details": details, "date": dt, "imessage_id": rid, "source": "auto"})
-                        print(f"  Logged: #{num} by {person} ({details or ''})")
+def check_expirations(drinks_conn):
+    now = time.time()
+    expired = [s for s, p in pending.items() if now - p.started_at > PENDING_TIMEOUT]
+    for sender in expired:
+        p = pending.pop(sender)
+        if p.photos and not p.numbers and not p.needs_math:
+            pass  # random chat photo, discard silently
+        elif p.numbers and not p.photos:
+            flag("MISSING_PHOTO", p.raw_msgs)
+            print(f"  Expired: {resolve_name(sender)} sent number without photo")
+        else:
+            flag("UNRESOLVED", p.raw_msgs)
+            print(f"  Expired: unresolved log from {resolve_name(sender)}")
 
-            processed.add(rowid)
-            i = j
-            continue
 
-        # Case 3: number before image
-        if text and not has_attachment:
-            num, details = parse_drink_text(text)
-            if num:
-                j = i + 1
-                while j < len(messages) and is_reaction(messages[j][2]):
-                    j += 1
-                if j < len(messages):
-                    next_msg = messages[j]
-                    next_rowid, next_handle, next_text, next_date, next_attachment = next_msg
-                    if next_handle == handle_id and next_attachment:
-                        person = resolve_name(handle_id)
-                        dt = apple_ts_to_str(date)
-                        drinks.append({"drink_number": num, "person": person, "details": details, "date": dt, "imessage_id": rowid, "source": "auto"})
-                        print(f"  Logged (num before image): #{num} by {person}")
-                        processed.add(rowid)
-                        processed.add(next_rowid)
-                        i = j + 1
-                        continue
-
-            if text and is_range(text):
-                flag("RANGE", [msg])
-
-        i += 1
-
-    return drinks
-
-def save_drinks(drinks_conn, drinks):
-    for d in drinks:
-        try:
-            drinks_conn.execute("""
-                INSERT OR IGNORE INTO drinks (drink_number, person, details, date, imessage_id, source)
-                VALUES (:drink_number, :person, :details, :date, :imessage_id, :source)
-            """, d)
-        except Exception as e:
-            print(f"  Error saving drink: {e}")
-    drinks_conn.commit()
+# ─── Poll loop ────────────────────────────────────────────────────────────────
 
 def check_new_messages():
     try:
         drinks_conn = sqlite3.connect(DRINKS_DB)
         init_drinks_db(drinks_conn)
         last_id = get_last_processed(drinks_conn)
+
         chat_conn = sqlite3.connect(f"file:{CHAT_DB}?mode=ro", uri=True)
         messages = fetch_new_messages(chat_conn, last_id)
         chat_conn.close()
 
         if messages:
-            print(f"  {len(messages)} new message(s) detected")
-            for m in messages:
-                print(f"  RAW: ROWID={m[0]} handle={m[1]} text={m[2]!r} attach={m[4]}")
-            drinks = process_messages(messages)
-            if drinks:
-                save_drinks(drinks_conn, drinks)
+            print(f"  {len(messages)} new message(s)")
+            for msg in messages:
+                handle_message(msg, drinks_conn)
+            check_expirations(drinks_conn)
             set_last_processed(drinks_conn, messages[-1][0])
+
         drinks_conn.close()
     except Exception as e:
-        print(f"Error processing messages: {e}")
+        print(f"Error: {e}")
 
+def init_cursor():
+    """On fresh DB, skip all history by pointing cursor at current max ROWID."""
+    drinks_conn = sqlite3.connect(DRINKS_DB)
+    init_drinks_db(drinks_conn)
+    last_id = get_last_processed(drinks_conn)
+    if last_id == 0:
+        chat_conn = sqlite3.connect(f"file:{CHAT_DB}?mode=ro", uri=True)
+        row = chat_conn.execute("SELECT MAX(ROWID) FROM message").fetchone()
+        chat_conn.close()
+        max_rowid = row[0] or 0
+        set_last_processed(drinks_conn, max_rowid)
+        print(f"Fresh start — cursor set to ROWID {max_rowid}")
+    else:
+        print(f"Resuming from ROWID {last_id}")
+    drinks_conn.close()
 
 def run():
-    # Process any messages missed while the watcher was offline
-    check_new_messages()
-
+    init_cursor()
     print(f"Watcher started (polling every {POLL_INTERVAL}s)")
     try:
         while True:
