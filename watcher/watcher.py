@@ -3,8 +3,11 @@ import time
 import os
 import sys
 import re
+import threading
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '../.env'))
 
@@ -15,9 +18,9 @@ from ai_parser import parse_ambiguous
 CHAT_DB = os.path.expanduser("~/Library/Messages/chat.db")
 DRINKS_DB = os.path.expanduser("~/drinks/data/drinks.db")
 CHAT_ID = "chat313739884378608609"
-POLL_INTERVAL = 30
 FLAG_LOG = os.path.expanduser("~/drinks/data/flagged.log")
 CONTEXT_WINDOW = 10
+DEBOUNCE_SECONDS = 0.75
 
 def init_drinks_db(conn):
     conn.execute("""
@@ -291,28 +294,79 @@ def save_drinks(drinks_conn, drinks):
             print(f"  Error saving drink: {e}")
     drinks_conn.commit()
 
+def check_new_messages(drinks_conn):
+    try:
+        last_id = get_last_processed(drinks_conn)
+        # immutable=1 lets us read safely without blocking iMessage's WAL writes
+        chat_conn = sqlite3.connect(f"file:{CHAT_DB}?mode=ro&immutable=1", uri=True)
+        messages = fetch_new_messages(chat_conn, last_id)
+        chat_conn.close()
+
+        if messages:
+            print(f"  {len(messages)} new message(s) detected")
+            drinks = process_messages(messages)
+            if drinks:
+                save_drinks(drinks_conn, drinks)
+            set_last_processed(drinks_conn, messages[-1][0])
+    except Exception as e:
+        print(f"Error processing messages: {e}")
+
+
+class ChatDBHandler(FileSystemEventHandler):
+    # Watch the directory; fire on chat.db or chat.db-wal changes.
+    # Multiple FS events can arrive per write, so debounce with a timer.
+
+    _WATCHED = {"chat.db", "chat.db-wal"}
+
+    def __init__(self, drinks_conn):
+        super().__init__()
+        self._drinks_conn = drinks_conn
+        self._timer = None
+        self._lock = threading.Lock()
+
+    def on_modified(self, event):
+        if os.path.basename(event.src_path) in self._WATCHED:
+            self._schedule()
+
+    on_created = on_modified  # WAL file may appear as created on first write
+
+    def _schedule(self):
+        with self._lock:
+            if self._timer:
+                self._timer.cancel()
+            self._timer = threading.Timer(DEBOUNCE_SECONDS, self._fire)
+            self._timer.daemon = True
+            self._timer.start()
+
+    def _fire(self):
+        print("chat.db changed — checking for new messages...")
+        check_new_messages(self._drinks_conn)
+
+
 def run():
     drinks_conn = sqlite3.connect(DRINKS_DB)
     init_drinks_db(drinks_conn)
-    print(f"Watcher started, polling every {POLL_INTERVAL}s...")
 
-    while True:
-        try:
-            last_id = get_last_processed(drinks_conn)
-            chat_conn = sqlite3.connect(f"file:{CHAT_DB}?mode=ro", uri=True)
-            messages = fetch_new_messages(chat_conn, last_id)
-            chat_conn.close()
+    # Process any messages missed while the watcher was offline
+    check_new_messages(drinks_conn)
 
-            if messages:
-                drinks = process_messages(messages)
-                if drinks:
-                    save_drinks(drinks_conn, drinks)
-                set_last_processed(drinks_conn, messages[-1][0])
+    watch_dir = os.path.dirname(CHAT_DB)
+    handler = ChatDBHandler(drinks_conn)
+    observer = Observer()
+    observer.schedule(handler, path=watch_dir, recursive=False)
+    observer.start()
+    print(f"Watcher started (FSEvents) — watching {watch_dir}")
 
-        except Exception as e:
-            print(f"Error: {e}")
-
-        time.sleep(POLL_INTERVAL)
+    try:
+        while observer.is_alive():
+            observer.join(timeout=1)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        observer.stop()
+        observer.join()
+        drinks_conn.close()
+        print("Watcher stopped.")
 
 if __name__ == "__main__":
     run()
