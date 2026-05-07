@@ -47,7 +47,7 @@ def init_drinks_db(conn):
             person TEXT,
             details TEXT,
             date TEXT,
-            imessage_id INTEGER UNIQUE,
+            imessage_id INTEGER,
             source TEXT DEFAULT 'auto'
         )
     """)
@@ -57,10 +57,29 @@ def init_drinks_db(conn):
             value TEXT
         )
     """)
-    # Add source column to existing tables that predate it
     existing = {row[1] for row in conn.execute("PRAGMA table_info(drinks)")}
     if "source" not in existing:
         conn.execute("ALTER TABLE drinks ADD COLUMN source TEXT DEFAULT 'auto'")
+    # Drop UNIQUE from imessage_id if present (multiple drinks can share one photo message)
+    has_imessage_unique = any(
+        any(col[2] == 'imessage_id' for col in conn.execute(f"PRAGMA index_info('{idx[1]}')"))
+        for idx in conn.execute("PRAGMA index_list(drinks)") if idx[2]
+    )
+    if has_imessage_unique:
+        conn.execute("ALTER TABLE drinks RENAME TO _drinks_old")
+        conn.execute("""
+            CREATE TABLE drinks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                drink_number INTEGER UNIQUE,
+                person TEXT,
+                details TEXT,
+                date TEXT,
+                imessage_id INTEGER,
+                source TEXT DEFAULT 'auto'
+            )
+        """)
+        conn.execute("INSERT INTO drinks SELECT * FROM _drinks_old")
+        conn.execute("DROP TABLE _drinks_old")
     conn.commit()
 
 def get_last_processed(conn):
@@ -174,12 +193,15 @@ def flag(reason, messages):
 
 def save_drink(conn, drink_number, person, details, date, imessage_id, source):
     try:
-        conn.execute("""
+        cur = conn.execute("""
             INSERT OR IGNORE INTO drinks (drink_number, person, details, date, imessage_id, source)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (drink_number, person, details, date, imessage_id, source))
         conn.commit()
-        print(f"  Logged: #{drink_number} by {person}{' — ' + details if details else ''} [{source}]")
+        if cur.rowcount > 0:
+            print(f"  Logged: #{drink_number} by {person}{' — ' + details if details else ''} [{source}]")
+        else:
+            print(f"  Skipped: #{drink_number} already logged")
     except Exception as e:
         print(f"  Error saving #{drink_number}: {e}")
 
