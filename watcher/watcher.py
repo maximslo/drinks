@@ -21,6 +21,9 @@ FLAG_LOG  = os.path.expanduser("~/drinks/data/flagged.log")
 SELF      = os.getenv("SELF_HANDLE",    "+17812050278")  # Mac Mini owner; handle_id is NULL for self-sent messages
 POLL_INTERVAL = 2
 PENDING_TIMEOUT = 90
+CORRECTION_WINDOW = 1800  # 30 min: starred correction can fix a recently logged drink
+
+_recently_resolved = {}  # handle_id → (drink_number, logged_at)
 
 
 # ─── Per-sender pending state ─────────────────────────────────────────────────
@@ -232,12 +235,14 @@ def try_resolve(sender, drinks_conn):
     if starred:
         num, details, _ = starred[-1]
         save_drink(drinks_conn, num, person, details, dt, photo_rowid, "auto")
+        _recently_resolved[sender] = (num, time.time())
         del pending[sender]
         return
 
     if len(p.numbers) == 1:
         num, details, _ = p.numbers[0]
         save_drink(drinks_conn, num, person, details, dt, photo_rowid, "auto")
+        _recently_resolved[sender] = (num, time.time())
         del pending[sender]
         return
 
@@ -246,6 +251,7 @@ def try_resolve(sender, drinks_conn):
     if is_consecutive(sorted_nums):
         for num, details, _ in sorted(p.numbers, key=lambda x: x[0], reverse=True):
             save_drink(drinks_conn, num, person, details, dt, photo_rowid, "auto")
+        _recently_resolved[sender] = (min(n for n, _, _ in p.numbers), time.time())
         del pending[sender]
         return
 
@@ -288,6 +294,7 @@ def handle_message(msg, drinks_conn):
         dt = apple_ts_to_str(date)
         for num, details, _ in numbers:
             save_drink(drinks_conn, num, person, details, dt, rowid, "auto")
+        _recently_resolved[handle_id] = (min(n for n, _, _ in numbers), time.time())
         return
 
     # Case 2: photo only — open/extend pending for this sender
@@ -299,7 +306,6 @@ def handle_message(msg, drinks_conn):
             pending[handle_id] = PendingLog(sender=handle_id)
         pending[handle_id].photos.append((rowid, date))
         pending[handle_id].raw_msgs.append(msg)
-        try_resolve(handle_id, drinks_conn)
         return
 
     # Case 3: math request — flag pending for AI
@@ -307,17 +313,32 @@ def handle_message(msg, drinks_conn):
         if handle_id in pending:
             pending[handle_id].needs_math = True
             pending[handle_id].raw_msgs.append(msg)
-            try_resolve(handle_id, drinks_conn)
         return
 
     # Case 4: number(s) only
     if numbers:
+        # Starred correction within window → update the recently logged drink in-place
+        starred = [(n, d) for n, d, s in numbers if s]
+        if starred and handle_id not in pending:
+            recent = _recently_resolved.get(handle_id)
+            if recent:
+                old_num, logged_at = recent
+                if time.time() - logged_at < CORRECTION_WINDOW:
+                    new_num, new_details = starred[-1]
+                    drinks_conn.execute(
+                        "UPDATE drinks SET drink_number=?" + (", details=?" if new_details else "") + " WHERE drink_number=? AND person=?",
+                        ([new_num, new_details, old_num, person] if new_details else [new_num, old_num, person])
+                    )
+                    drinks_conn.commit()
+                    _recently_resolved[handle_id] = (new_num, time.time())
+                    print(f"  [CORRECTION] #{old_num} → #{new_num} for {person}")
+                    return
+
         # This sender already has a pending photo → pair with it
         if handle_id in pending and pending[handle_id].photos:
-            print(f"  [CASE4] {person} has pending photo → pairing, resolving")
+            print(f"  [CASE4] {person} has pending photo → pairing")
             pending[handle_id].numbers.extend(numbers)
             pending[handle_id].raw_msgs.append(msg)
-            try_resolve(handle_id, drinks_conn)
             return
 
         # Another sender has a pending photo and this number matches them → attribute to photo sender
@@ -325,10 +346,9 @@ def handle_message(msg, drinks_conn):
             if photo_sender != handle_id and p.photos and not p.numbers:
                 photo_person = resolve_name(photo_sender)
                 if is_plausible(numbers, photo_person, drinks_conn):
-                    print(f"  [CASE4] attributing to {photo_person}'s pending photo → resolving")
+                    print(f"  [CASE4] attributing to {photo_person}'s pending photo")
                     p.numbers.extend(numbers)
                     p.raw_msgs.append(msg)
-                    try_resolve(photo_sender, drinks_conn)
                     return
 
         # No pending photo anywhere — validate before opening a pending window for this sender
@@ -379,6 +399,11 @@ def check_new_messages():
             print(f"  {len(messages)} new message(s)")
             for msg in messages:
                 handle_message(msg, drinks_conn)
+            # Resolve after full batch so same-tick corrections (e.g. 5583 then 5593*) are seen together
+            for sender in list(pending):
+                p = pending.get(sender)
+                if p and p.photos:
+                    try_resolve(sender, drinks_conn)
             check_expirations(drinks_conn)
             set_last_processed(drinks_conn, messages[-1][0])
 

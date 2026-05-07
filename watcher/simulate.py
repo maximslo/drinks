@@ -126,13 +126,36 @@ def make_msg(sender_name, text=None, has_attachment=False):
     handle = SENDERS.get(sender_name.lower(), f"+1555{hash(sender_name) % 10000000:07d}")
     return (next_rowid(), handle, text, apple_now(), int(has_attachment))
 
+def _resolve(conn):
+    """Simulate end-of-tick resolution pass."""
+    for s in list(w.pending):
+        p = w.pending.get(s)
+        if p and p.photos:
+            w.try_resolve(s, conn)
+
 def inject(sender, text=None, photo=False, conn=None):
+    """Inject a single message as its own poll tick (resolves immediately after)."""
     msg = make_msg(sender, text=text, has_attachment=photo)
     label = []
     if photo: label.append("[photo]")
     if text:  label.append(repr(text))
     print(f"  → {sender}: {' '.join(label) or '(empty)'}")
     w.handle_message(msg, conn or _db)
+    _resolve(conn or _db)
+
+def inject_tick(messages, conn=None):
+    """Inject multiple messages as one poll tick — resolves once at the end."""
+    db = conn or _db
+    for sender, kwargs in messages:
+        text = kwargs.get('text')
+        photo = kwargs.get('photo', False)
+        msg = make_msg(sender, text=text, has_attachment=photo)
+        label = []
+        if photo: label.append("[photo]")
+        if text:  label.append(repr(text))
+        print(f"  → {sender}: {' '.join(label) or '(empty)'} [same tick]")
+        w.handle_message(msg, db)
+    _resolve(db)
 
 
 # ─── Built-in test scenarios ──────────────────────────────────────────────────
@@ -210,6 +233,15 @@ def _s10(conn):
     inject("Liam", "7002", photo=True, conn=conn)   # actual log
     w.check_expirations(conn)
 
+def _s11(conn):
+    "Same-tick correction: photo, wrong number, starred fix all arrive together"
+    inject_tick([
+        ("Liam", {"photo": True}),
+        ("Liam", {"text": "5583"}),
+        ("Liam", {"text": "5593*"}),
+    ], conn=conn)
+    w.check_expirations(conn)
+
 SCENARIOS = [
     ("photo → number (happy path)", _s1),
     ("photo + number in same message", _s2),
@@ -221,6 +253,7 @@ SCENARIOS = [
     ("number only — expires, flags MISSING_PHOTO", _s8),
     ("starred correction", _s9),
     ("unrelated chatter filtered by validation", _s10),
+    ("same-tick correction overrides wrong number", _s11),
 ]
 
 
