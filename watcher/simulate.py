@@ -242,6 +242,14 @@ def _s11(conn):
     ], conn=conn)
     w.check_expirations(conn)
 
+def _s12(conn):
+    "Bad range typo corrected with *endpoint — reconstructs from last logged"
+    seed_person(conn, "Liam", 1000)
+    inject("Liam", photo=True, conn=conn)
+    inject("Liam", "999-959", conn=conn)   # typo: meant 999-996, span too large
+    inject("Liam", "996*", conn=conn)       # correct endpoint: fills 999→996
+    w.check_expirations(conn)
+
 SCENARIOS = [
     ("photo → number (happy path)", _s1),
     ("photo + number in same message", _s2),
@@ -254,6 +262,7 @@ SCENARIOS = [
     ("starred correction", _s9),
     ("unrelated chatter filtered by validation", _s10),
     ("same-tick correction overrides wrong number", _s11),
+    ("bad range typo corrected with *endpoint", _s12),
 ]
 
 

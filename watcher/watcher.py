@@ -230,12 +230,26 @@ def try_resolve(sender, drinks_conn):
         del pending[sender]
         return
 
-    # Starred = correction override — use the last starred number
+    # Starred = correction — if prior bad numbers exist, reconstruct range; otherwise single drink
     starred = [(n, d, s) for n, d, s in p.numbers if s]
     if starred:
-        num, details, _ = starred[-1]
-        save_drink(drinks_conn, num, person, details, dt, photo_rowid, "auto")
-        _recently_resolved[sender] = (num, time.time())
+        new_endpoint, details, _ = starred[-1]
+        non_starred = [n for n, _, s in p.numbers if not s]
+        last = get_last_drink_number(drinks_conn, person)
+        if non_starred and last is not None:
+            start = last - 1
+            span = start - new_endpoint
+            if 1 <= span <= 19:
+                print(f"  [CORRECTION] reconstructing #{start}→#{new_endpoint} for {person} ({span + 1} drinks)")
+                range_nums = list(range(start, new_endpoint - 1, -1))
+                for i, n in enumerate(range_nums):
+                    d = details if i == len(range_nums) - 1 else None
+                    save_drink(drinks_conn, n, person, d, dt, photo_rowid, "auto")
+                _recently_resolved[sender] = (new_endpoint, time.time())
+                del pending[sender]
+                return
+        save_drink(drinks_conn, new_endpoint, person, details, dt, photo_rowid, "auto")
+        _recently_resolved[sender] = (new_endpoint, time.time())
         del pending[sender]
         return
 
@@ -246,7 +260,7 @@ def try_resolve(sender, drinks_conn):
         del pending[sender]
         return
 
-    # Multiple numbers — consecutive range goes to same person, otherwise AI
+    # Multiple numbers — consecutive range logs immediately; non-consecutive waits for *correction
     sorted_nums = sorted([n for n, _, _ in p.numbers], reverse=True)
     if is_consecutive(sorted_nums):
         for num, details, _ in sorted(p.numbers, key=lambda x: x[0], reverse=True):
@@ -255,13 +269,7 @@ def try_resolve(sender, drinks_conn):
         del pending[sender]
         return
 
-    ai_results = parse_ambiguous(p.raw_msgs, "AMBIGUOUS_MULTIPLE_NUMBERS")
-    if ai_results:
-        for r in ai_results:
-            save_drink(drinks_conn, r["drink_number"], r["person"], r.get("details"), dt, photo_rowid, "ai")
-    else:
-        flag("AMBIGUOUS_MULTIPLE_NUMBERS", p.raw_msgs)
-    del pending[sender]
+    print(f"  [WAIT] {person}: non-consecutive {sorted_nums} — waiting for *correction")
 
 def _pending_summary():
     if not pending:

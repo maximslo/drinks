@@ -37,7 +37,7 @@ def resolve_name(handle_id):
 
 # ─── Number parser ────────────────────────────────────────────────────────────
 
-MIN_DRINK_NUMBER = 1000
+MIN_DRINK_NUMBER = 10  # single-number noise floor only; groups rely on is_plausible
 
 def parse_numbers(text):
     """
@@ -51,8 +51,12 @@ def parse_numbers(text):
       "5593, modelo"               → [(5593, "modelo", False)]
       "nothin man just snackin 9998" → [(9998, "nothin man just snackin", False)]
       "5649-5647"                  → [(5649,None,F), (5648,None,F), (5647,None,F)]
+      "50-48"                      → [(50,None,F), (49,None,F), (48,None,F)]
       "cheers 5649-5647 woo"       → [(5649,None,F), (5648,None,F), (5647,"cheers woo",F)]
       "5649 + 5648"                → [(5649,None,F), (5648,None,F)]
+      "50 and 49"                  → [(50,None,F), (49,None,F)]
+      "50 49"                      → [(50,None,F), (49,None,F)]
+      "50\\n49"                     → [(50,None,F), (49,None,F)]
       "5649, 5648, On our way"     → [(5649,None,F), (5648,"On our way",F)]
       "5649 5648 Shooters"         → [(5649,None,F), (5648,"Shooters",F)]
     """
@@ -60,25 +64,25 @@ def parse_numbers(text):
         return []
     text = text.strip()
 
-    # Range anywhere in text: 5649-5647
+    # Range: 5649-5647 or 50-48 — no floor, is_plausible validates
     m = re.search(r'(?<!\d)(\d+)\s*-\s*(\d+)(?!\d)', text)
     if m:
         a, b = int(m.group(1)), int(m.group(2))
         hi, lo = max(a, b), min(a, b)
-        if hi >= MIN_DRINK_NUMBER and lo >= MIN_DRINK_NUMBER and hi - lo <= 20:
+        if hi > lo and hi - lo <= 20:
             leftover = _leftover(text, m.start(), m.end())
             nums = list(range(hi, lo - 1, -1))
             return [(n, leftover if i == len(nums) - 1 else None, False) for i, n in enumerate(nums)]
 
-    # Plus notation anywhere: 5649 + 5648 + 5647
-    m = re.search(r'(?<!\d)\d+(\s*\+\s*\d+)+(?!\d)', text)
+    # Multi-number with connectors: comma, +, "and", space, or newline — no floor
+    _SEP = r'(?:\s*(?:,|\+|and)\s*|\s+)'
+    m = re.search(rf'(?<!\d)\d+(?:{_SEP}\d+)+(?!\d)', text, re.IGNORECASE)
     if m:
         nums = sorted([int(n) for n in re.findall(r'\d+', m.group(0))], reverse=True)
-        if nums[0] >= MIN_DRINK_NUMBER:
-            leftover = _leftover(text, m.start(), m.end())
-            return [(n, leftover if i == len(nums) - 1 else None, False) for i, n in enumerate(nums)]
+        leftover = _leftover(text, m.start(), m.end())
+        return [(n, leftover if i == len(nums) - 1 else None, False) for i, n in enumerate(nums)]
 
-    # General: find all drink numbers anywhere in text
+    # Single number (with optional * correction marker) — small noise floor
     matches = [
         (int(m.group(1)), bool(m.group(2)), m.start(), m.end())
         for m in re.finditer(r'(?<!\d)(\d+)(\*?)(?!\d)', text)
@@ -87,7 +91,6 @@ def parse_numbers(text):
     if not matches:
         return []
 
-    # Details = everything left after removing the matched number spans
     leftover = text
     for _, _, start, end in reversed(matches):
         leftover = leftover[:start] + leftover[end:]
