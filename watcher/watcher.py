@@ -72,7 +72,7 @@ def set_last_processed(conn, imessage_id):
     conn.commit()
 
 def get_last_drink_number(conn, person):
-    row = conn.execute("SELECT MAX(drink_number) FROM drinks WHERE person = ?", (person,)).fetchone()
+    row = conn.execute("SELECT MIN(drink_number) FROM drinks WHERE person = ?", (person,)).fetchone()
     return row[0] if row and row[0] is not None else None
 
 
@@ -157,8 +157,8 @@ def is_plausible(numbers, person, conn):
     if any(starred for _, _, starred in numbers):
         return True  # explicit correction
     sorted_nums = sorted([n for n, _, _ in numbers], reverse=True)
-    expected = last + len(numbers)
-    return sorted_nums[0] == expected and is_consecutive(sorted_nums)
+    # counting down: accept next-in-sequence (last-1) or any earlier unlogged drink (> last)
+    return sorted_nums[0] >= last - 1 and is_consecutive(sorted_nums)
 
 
 # ─── Flagging ─────────────────────────────────────────────────────────────────
@@ -235,20 +235,34 @@ def try_resolve(sender, drinks_conn):
         flag("AMBIGUOUS_MULTIPLE_NUMBERS", p.raw_msgs)
     del pending[sender]
 
+def _pending_summary():
+    if not pending:
+        return "pending=none"
+    parts = []
+    for h, p in pending.items():
+        parts.append(f"{resolve_name(h)}:{'📷' if p.photos else ''}{'#' if p.numbers else ''}")
+    return "pending=[" + " ".join(parts) + "]"
+
 def handle_message(msg, drinks_conn):
     rowid, handle_id, text, date, has_attachment = msg
     if handle_id is None:
         handle_id = SELF
 
-    if is_reaction(text):
+    clean = (text or "").lstrip("￼").strip()  # strip iMessage attachment placeholder
+
+    if is_reaction(clean):
         return
 
-    clean = (text or "").lstrip("￼").strip()  # strip iMessage attachment placeholder
     numbers = parse_numbers(clean)
+    person = resolve_name(handle_id)
+
+    attach_str = "attach=yes" if has_attachment else "attach=no"
+    nums_str = f"parsed={[n for n,_,_ in numbers]}" if numbers else "parsed=[]"
+    print(f"  [MSG] {person} | {attach_str} | text={clean!r} | {nums_str}")
 
     # Case 1: photo + number(s) in same message — log immediately
     if has_attachment and numbers:
-        person = resolve_name(handle_id)
+        print(f"  [CASE1] photo+number in same msg → logging immediately")
         dt = apple_ts_to_str(date)
         for num, details, _ in numbers:
             save_drink(drinks_conn, num, person, details, dt, rowid, "auto")
@@ -256,6 +270,9 @@ def handle_message(msg, drinks_conn):
 
     # Case 2: photo only — open/extend pending for this sender
     if has_attachment:
+        last = get_last_drink_number(drinks_conn, person)
+        expected = f"#{last - 1}" if last else "any (no history)"
+        print(f"  [CASE2] photo only → waiting for number from {person} | next expected: {expected}")
         if handle_id not in pending:
             pending[handle_id] = PendingLog(sender=handle_id)
         pending[handle_id].photos.append((rowid, date))
@@ -273,10 +290,9 @@ def handle_message(msg, drinks_conn):
 
     # Case 4: number(s) only
     if numbers:
-        person = resolve_name(handle_id)
-
         # This sender already has a pending photo → pair with it
         if handle_id in pending and pending[handle_id].photos:
+            print(f"  [CASE4] {person} has pending photo → pairing, resolving")
             pending[handle_id].numbers.extend(numbers)
             pending[handle_id].raw_msgs.append(msg)
             try_resolve(handle_id, drinks_conn)
@@ -287,19 +303,28 @@ def handle_message(msg, drinks_conn):
             if photo_sender != handle_id and p.photos and not p.numbers:
                 photo_person = resolve_name(photo_sender)
                 if is_plausible(numbers, photo_person, drinks_conn):
+                    print(f"  [CASE4] attributing to {photo_person}'s pending photo → resolving")
                     p.numbers.extend(numbers)
                     p.raw_msgs.append(msg)
                     try_resolve(photo_sender, drinks_conn)
                     return
 
         # No pending photo anywhere — validate before opening a pending window for this sender
+        last = get_last_drink_number(drinks_conn, person)
+        sorted_nums = sorted([n for n, _, _ in numbers], reverse=True)
+        expected = f"≤#{last + 1} (any unlogged)" if last else "any"
         if is_plausible(numbers, person, drinks_conn):
+            print(f"  [CASE4] no pending photo | last=#{last} expected={expected} got=#{sorted_nums[0]} → plausible, waiting for photo")
             if handle_id not in pending:
                 pending[handle_id] = PendingLog(sender=handle_id)
             pending[handle_id].numbers.extend(numbers)
             pending[handle_id].raw_msgs.append(msg)
-            return  # waiting for photo
-        # Truly unrelated — skip
+            return
+        else:
+            print(f"  [SKIP] no pending photo | last=#{last} expected={expected} got=#{sorted_nums[0]} → not plausible, ignoring")
+
+    if not numbers and not has_attachment:
+        print(f"  [SKIP] no numbers, no photo | {_pending_summary()}")
 
 def check_expirations(drinks_conn):
     now = time.time()
@@ -347,6 +372,9 @@ def init_cursor():
     drinks_conn.close()
 
 def run():
+    print(f"DRINKS_DB: {DRINKS_DB}")
+    print(f"CHAT_DB:   {CHAT_DB}")
+    print(f"CHAT_ID:   {CHAT_ID}")
     init_cursor()
     print(f"Watcher started (polling every {POLL_INTERVAL}s)")
     try:
