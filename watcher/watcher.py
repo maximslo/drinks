@@ -3,6 +3,7 @@ import time
 import os
 import sys
 import re
+import plistlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -13,10 +14,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 from parser import parse_numbers, resolve_name
 from ai_parser import parse_ambiguous
 
-CHAT_DB = os.path.expanduser("~/Library/Messages/chat.db")
-DRINKS_DB = os.path.expanduser("~/drinks/data/drinks.db")
-CHAT_ID = "chat313739884378608609"
-FLAG_LOG = os.path.expanduser("~/drinks/data/flagged.log")
+CHAT_DB   = os.getenv("CHAT_DB_PATH",  os.path.expanduser("~/Library/Messages/chat.db"))
+DRINKS_DB = os.getenv("DRINKS_DB_PATH", os.path.expanduser("~/drinks/data/drinks.db"))
+CHAT_ID   = os.getenv("CHAT_ID",        "chat313739884378608609")
+FLAG_LOG  = os.path.expanduser("~/drinks/data/flagged.log")
+SELF      = os.getenv("SELF_HANDLE",    "+17812050278")  # Mac Mini owner; handle_id is NULL for self-sent messages
 POLL_INTERVAL = 2
 PENDING_TIMEOUT = 90
 
@@ -55,6 +57,10 @@ def init_drinks_db(conn):
             value TEXT
         )
     """)
+    # Add source column to existing tables that predate it
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(drinks)")}
+    if "source" not in existing:
+        conn.execute("ALTER TABLE drinks ADD COLUMN source TEXT DEFAULT 'auto'")
     conn.commit()
 
 def get_last_processed(conn):
@@ -72,12 +78,33 @@ def get_last_drink_number(conn, person):
 
 # ─── chat.db helpers ──────────────────────────────────────────────────────────
 
+_ATTRIBUTED_BODY_SKIP = re.compile(
+    r'^(streamtyped|NS[A-Za-z]+|__kIM[A-Za-z]+|__k[A-Za-z]+|NSDictionary|NSValue|NSNumber)$'
+)
+
+def _text_from_attributed_body(blob):
+    """Extract plain text from a typedstream-encoded NSAttributedString blob."""
+    if not blob:
+        return None
+    data = bytes(blob)
+    # Find all printable ASCII sequences, skip framework/class name tokens
+    for seq in re.findall(rb'[ -~]{2,}', data):
+        try:
+            s = seq.decode('utf-8').strip()
+        except UnicodeDecodeError:
+            continue
+        if s and not _ATTRIBUTED_BODY_SKIP.match(s) and not s.startswith(('$', '&', '"')):
+            return s
+    return None
+
 def fetch_new_messages(chat_conn, last_id):
-    return chat_conn.execute("""
+    rows = chat_conn.execute("""
         SELECT
             message.ROWID,
             handle.id as handle_id,
+            message.is_from_me,
             message.text,
+            message.attributedBody,
             message.date,
             message.cache_has_attachments
         FROM message
@@ -88,6 +115,15 @@ def fetch_new_messages(chat_conn, last_id):
         AND message.ROWID > ?
         ORDER BY message.ROWID ASC
     """, (CHAT_ID, last_id)).fetchall()
+
+    normalised = []
+    for rowid, handle_id, is_from_me, text, attributed_body, date, has_attachment in rows:
+        if is_from_me:
+            handle_id = SELF
+        if not text:
+            text = _text_from_attributed_body(attributed_body)
+        normalised.append((rowid, handle_id, text, date, has_attachment))
+    return normalised
 
 
 # ─── Utilities ────────────────────────────────────────────────────────────────
@@ -201,6 +237,8 @@ def try_resolve(sender, drinks_conn):
 
 def handle_message(msg, drinks_conn):
     rowid, handle_id, text, date, has_attachment = msg
+    if handle_id is None:
+        handle_id = SELF
 
     if is_reaction(text):
         return
@@ -244,23 +282,23 @@ def handle_message(msg, drinks_conn):
             try_resolve(handle_id, drinks_conn)
             return
 
-        # No pending photo — validate before opening a pending window
-        if is_plausible(numbers, person, drinks_conn):
-            if handle_id not in pending:
-                pending[handle_id] = PendingLog(sender=handle_id)
-            pending[handle_id].numbers.extend(numbers)
-            pending[handle_id].raw_msgs.append(msg)
-            return  # waiting for photo
-
-        # Not plausible for this sender — check if another sender's photo matches
+        # Another sender has a pending photo and this number matches them → attribute to photo sender
         for photo_sender, p in pending.items():
-            if p.photos and not p.numbers:
+            if photo_sender != handle_id and p.photos and not p.numbers:
                 photo_person = resolve_name(photo_sender)
                 if is_plausible(numbers, photo_person, drinks_conn):
                     p.numbers.extend(numbers)
                     p.raw_msgs.append(msg)
                     try_resolve(photo_sender, drinks_conn)
                     return
+
+        # No pending photo anywhere — validate before opening a pending window for this sender
+        if is_plausible(numbers, person, drinks_conn):
+            if handle_id not in pending:
+                pending[handle_id] = PendingLog(sender=handle_id)
+            pending[handle_id].numbers.extend(numbers)
+            pending[handle_id].raw_msgs.append(msg)
+            return  # waiting for photo
         # Truly unrelated — skip
 
 def check_expirations(drinks_conn):
@@ -302,19 +340,10 @@ def check_new_messages():
         print(f"Error: {e}")
 
 def init_cursor():
-    """On fresh DB, skip all history by pointing cursor at current max ROWID."""
     drinks_conn = sqlite3.connect(DRINKS_DB)
     init_drinks_db(drinks_conn)
     last_id = get_last_processed(drinks_conn)
-    if last_id == 0:
-        chat_conn = sqlite3.connect(f"file:{CHAT_DB}?mode=ro", uri=True)
-        row = chat_conn.execute("SELECT MAX(ROWID) FROM message").fetchone()
-        chat_conn.close()
-        max_rowid = row[0] or 0
-        set_last_processed(drinks_conn, max_rowid)
-        print(f"Fresh start — cursor set to ROWID {max_rowid}")
-    else:
-        print(f"Resuming from ROWID {last_id}")
+    print(f"Starting from ROWID {last_id}")
     drinks_conn.close()
 
 def run():

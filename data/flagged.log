@@ -85,3 +85,67 @@
 
 [FLAGGED: RANGE]
   ROWID=7831 handle=+16173097007 text='6386-6384'
+
+[FLAGGED: MISSING_PHOTO]
+  ROWID=1013 handle=+18453002491 text='7001'
+
+[FLAGGED: MISSING_PHOTO]
+  ROWID=1013 handle=+18453002491 text='7001'
+
+[FLAGGED: MISSING_PHOTO]
+  ROWID=1013 handle=+18453002491 text='7001'
+
+[FLAGGED: AMBIGUOUS_MULTIPLE_NUMBERS]
+  ROWID=11 handle=+16173097007 text='5606, red strip'
+  ROWID=25 handle=+16173097007 text='5608, rbv'
+  ROWID=37 handle=+16173097007 text='￼'
+
+[FLAGGED: MATH_REQUEST]
+  ROWID=73 handle=marek.pinto@icloud.com text='￼packed lunch!'
+  ROWID=157 handle=marek.pinto@icloud.com text='9 drinks someone else do the math pls'
+
+[FLAGGED: MATH_REQUEST]
+  ROWID=30920 handle=+16179130745 text='￼'
+  ROWID=31026 handle=+16179130745 text='I’ll figure it out when I log'
+
+[FLAGGED: MATH_REQUEST]
+  ROWID=34239 handle=+16037930991 text='https://fantasy.espn.com/football/league/join?leagueId=2040859851&inviteId=11b24826-3406-4e81-8eff-7c8e3428c032'
+  ROWID=34336 handle=+16037930991 text='ok i’m open to any rule changes and we still need to figure out a 12th but i figured people can start joining so we can figure it out'
+
+[FLAGGED: AMBIGUOUS_MULTIPLE_NUMBERS]
+  ROWID=40524 handle=+16173097007 text='￼'
+  ROWID=40711 handle=+16173097007 text='￼Max and I’s last two drinks of the night 9253, 9252 (shots of Johnnie walker )'
+  ROWID=40764 handle=+16173097007 text='￼'
+  ROWID=40810 handle=+16173097007 text='￼'
+  ROWID=40834 handle=+16173097007 text='￼We got 9255, 9254'
+  ROWID=40835 handle=+16173097007 text='￼'
+  ROWID=40958 handle=+16173097007 text='￼'
+  ROWID=40977 handle=+16173097007 text='￼Night begins 9316, 9315, 9314'
+  ROWID=41007 handle=+16173097007 text='￼Welcome to Bangkok 9322, 9321, 9320'
+  ROWID=41041 handle=+16173097007 text='￼Moving up: 9309, 9308, 9307'
+  ROWID=41080 handle=+16173097007 text='9300, 9329, 9328 we moving in (rum and cokes )'
+
+[FLAGGED: MATH_REQUEST]
+  ROWID=73 handle=marek.pinto@icloud.com text='￼packed lunch!'
+  ROWID=157 handle=marek.pinto@icloud.com text='9 drinks someone else do the math pls'
+
+[FLAGGED: MATH_REQUEST]
+  ROWID=30920 handle=+16179130745 text='￼'
+  ROWID=31026 handle=+16179130745 text='I’ll figure it out when I log'
+
+[FLAGGED: MATH_REQUEST]
+  ROWID=34239 handle=+16037930991 text='https://fantasy.espn.com/football/league/join?leagueId=2040859851&inviteId=11b24826-3406-4e81-8eff-7c8e3428c032'
+  ROWID=34336 handle=+16037930991 text='ok i’m open to any rule changes and we still need to figure out a 12th but i figured people can start joining so we can figure it out'
+
+[FLAGGED: AMBIGUOUS_MULTIPLE_NUMBERS]
+  ROWID=40524 handle=+16173097007 text='￼'
+  ROWID=40711 handle=+16173097007 text='￼Max and I’s last two drinks of the night 9253, 9252 (shots of Johnnie walker )'
+  ROWID=40764 handle=+16173097007 text='￼'
+  ROWID=40810 handle=+16173097007 text='￼'
+  ROWID=40834 handle=+16173097007 text='￼We got 9255, 9254'
+  ROWID=40835 handle=+16173097007 text='￼'
+  ROWID=40958 handle=+16173097007 text='￼'
+  ROWID=40977 handle=+16173097007 text='￼Night begins 9316, 9315, 9314'
+  ROWID=41007 handle=+16173097007 text='￼Welcome to Bangkok 9322, 9321, 9320'
+  ROWID=41041 handle=+16173097007 text='￼Moving up: 9309, 9308, 9307'
+  ROWID=41080 handle=+16173097007 text='9300, 9329, 9328 we moving in (rum and cokes )'

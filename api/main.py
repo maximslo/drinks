@@ -6,6 +6,7 @@ import asyncio
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 DRINKS_DB = os.path.expanduser("~/drinks/data/drinks.db")
@@ -36,6 +37,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "../frontend")
+app.mount("/ui", StaticFiles(directory=FRONTEND_DIR), name="frontend")
 
 subscribers: list = []
 
