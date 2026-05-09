@@ -65,22 +65,24 @@ def parse_numbers(text):
     text = text.strip()
 
     # Range: 5649-5647 or 50-48 — no floor, is_plausible validates
-    m = re.search(r'(?<!\d)(\d+)\s*-\s*(\d+)(?!\d)', text)
+    m = re.search(r'(?<!\d)(\d+)\s*-\s*(\d+)(\*?)(?!\d)', text)
     if m:
         a, b = int(m.group(1)), int(m.group(2))
         hi, lo = max(a, b), min(a, b)
+        starred = bool(m.group(3))
         if hi > lo and hi - lo <= 20:
             leftover = _leftover(text, m.start(), m.end())
             nums = list(range(hi, lo - 1, -1))
-            return [(n, leftover if i == len(nums) - 1 else None, False) for i, n in enumerate(nums)]
+            return [(n, leftover if i == len(nums) - 1 else None, starred and n == lo) for i, n in enumerate(nums)]
 
     # Multi-number with connectors: comma, +, "and", space, or newline — no floor
     _SEP = r'(?:\s*(?:,|\+|and)\s*|\s+)'
-    m = re.search(rf'(?<!\d)\d+(?:{_SEP}\d+)+(?!\d)', text, re.IGNORECASE)
+    m = re.search(rf'(?<!\d)\d+(?:{_SEP}\d+)+(\*?)(?!\d)', text, re.IGNORECASE)
     if m:
+        starred = bool(m.group(1))
         nums = sorted([int(n) for n in re.findall(r'\d+', m.group(0))], reverse=True)
         leftover = _leftover(text, m.start(), m.end())
-        return [(n, leftover if i == len(nums) - 1 else None, False) for i, n in enumerate(nums)]
+        return [(n, leftover if i == len(nums) - 1 else None, starred and n == min(nums)) for i, n in enumerate(nums)]
 
     # Single number (with optional * correction marker) — small noise floor
     matches = [

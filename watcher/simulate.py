@@ -259,6 +259,14 @@ def _s13(conn):
     inject("Liam", "998", conn=conn)        # pairs with same photo via continuation
     w.check_expirations(conn)
 
+def _s14(conn):
+    "Wrong multi-drink log corrected with full correct set (5540,5539 → 5535,5534)"
+    seed_person(conn, "Liam", 5536)
+    inject("Liam", photo=True, conn=conn)
+    inject("Liam", "5540, 5539", conn=conn)   # wrong — logged but continuation stays live
+    inject("Liam", "5535, 5534*", conn=conn)  # correct set, starred signals correction
+    w.check_expirations(conn)
+
 SCENARIOS = [
     ("photo → number (happy path)", _s1),
     ("photo + number in same message", _s2),
@@ -273,6 +281,7 @@ SCENARIOS = [
     ("same-tick correction overrides wrong number", _s11),
     ("bad range typo corrected with *endpoint", _s12),
     ("separate messages after photo — continuation window", _s13),
+    ("wrong multi-drink corrected with full correct set", _s14),
 ]
 
 

@@ -210,15 +210,16 @@ def save_drink(conn, drink_number, person, details, date, imessage_id, source):
     except Exception as e:
         print(f"  Error saving #{drink_number}: {e}")
 
-def _continue(sender, last_num):
+def _continue(sender, logged_nums):
     """After logging, keep photo alive for CONTINUATION_WINDOW so more numbers can pair."""
+    nums = frozenset([logged_nums] if isinstance(logged_nums, int) else logged_nums)
     p = pending.get(sender)
     if p:
         p.numbers.clear()
         p.raw_msgs.clear()
         p.continuing = True
         p.started_at = time.time()
-    _recently_resolved[sender] = (last_num, time.time())
+    _recently_resolved[sender] = (nums, time.time())
 
 def try_resolve(sender, drinks_conn):
     """Attempt to log drinks for sender if we have both photo and number(s)."""
@@ -242,13 +243,29 @@ def try_resolve(sender, drinks_conn):
         del pending[sender]
         return
 
-    # Starred = correction — if prior bad numbers exist, reconstruct range; otherwise single drink
+    # Starred = correction
     starred = [(n, d, s) for n, d, s in p.numbers if s]
     if starred:
         new_endpoint, details, _ = starred[-1]
         non_starred = [n for n, _, s in p.numbers if not s]
         last = get_last_drink_number(drinks_conn, person)
+
+        if p.continuing and non_starred:
+            # Previously logged drinks were wrong — undo them, log the correct set
+            old_entry = _recently_resolved.get(sender)
+            if old_entry:
+                old_nums, _ = old_entry
+                for old_n in sorted(old_nums, reverse=True):
+                    drinks_conn.execute("DELETE FROM drinks WHERE drink_number=? AND person=?", (old_n, person))
+                drinks_conn.commit()
+                print(f"  [UNDO] deleted {sorted(old_nums, reverse=True)} for {person}")
+            for n, d, _ in sorted(p.numbers, key=lambda x: x[0], reverse=True):
+                save_drink(drinks_conn, n, person, d, dt, photo_rowid, "auto")
+            _continue(sender, {n for n, _, _ in p.numbers})
+            return
+
         if non_starred and last is not None:
+            # Bad range never logged — reconstruct from last-1 down to endpoint
             start = last - 1
             span = start - new_endpoint
             if 1 <= span <= 19:
@@ -257,10 +274,11 @@ def try_resolve(sender, drinks_conn):
                 for i, n in enumerate(range_nums):
                     d = details if i == len(range_nums) - 1 else None
                     save_drink(drinks_conn, n, person, d, dt, photo_rowid, "auto")
-                _continue(sender, new_endpoint)
+                _continue(sender, set(range_nums))
                 return
+
         save_drink(drinks_conn, new_endpoint, person, details, dt, photo_rowid, "auto")
-        _continue(sender, new_endpoint)
+        _continue(sender, {new_endpoint})
         return
 
     if len(p.numbers) == 1:
@@ -274,7 +292,7 @@ def try_resolve(sender, drinks_conn):
     if is_consecutive(sorted_nums):
         for num, details, _ in sorted(p.numbers, key=lambda x: x[0], reverse=True):
             save_drink(drinks_conn, num, person, details, dt, photo_rowid, "auto")
-        _continue(sender, min(n for n, _, _ in p.numbers))
+        _continue(sender, {n for n, _, _ in p.numbers})
         return
 
     print(f"  [WAIT] {person}: non-consecutive {sorted_nums} — waiting for *correction")
@@ -333,21 +351,41 @@ def handle_message(msg, drinks_conn):
 
     # Case 4: number(s) only
     if numbers:
-        # Starred correction within window → update the recently logged drink in-place
+        # Starred correction within window → fix recently logged drink(s)
         starred = [(n, d) for n, d, s in numbers if s]
         if starred and handle_id not in pending:
             recent = _recently_resolved.get(handle_id)
             if recent:
-                old_num, logged_at = recent
+                old_nums, logged_at = recent
                 if time.time() - logged_at < CORRECTION_WINDOW:
                     new_num, new_details = starred[-1]
-                    drinks_conn.execute(
-                        "UPDATE drinks SET drink_number=?" + (", details=?" if new_details else "") + " WHERE drink_number=? AND person=?",
-                        ([new_num, new_details, old_num, person] if new_details else [new_num, old_num, person])
-                    )
-                    drinks_conn.commit()
-                    _recently_resolved[handle_id] = (new_num, time.time())
-                    print(f"  [CORRECTION] #{old_num} → #{new_num} for {person}")
+                    non_starred_new = [n for n, _, s in numbers if not s]
+                    if non_starred_new:
+                        # Multi-drink correction: fetch old photo info, delete old, insert new
+                        row = drinks_conn.execute(
+                            "SELECT imessage_id, date FROM drinks WHERE drink_number=? AND person=?",
+                            (min(old_nums), person)
+                        ).fetchone()
+                        old_imessage_id = row[0] if row else None
+                        old_date = row[1] if row else apple_ts_to_str(date)
+                        for old_n in old_nums:
+                            drinks_conn.execute("DELETE FROM drinks WHERE drink_number=? AND person=?", (old_n, person))
+                        drinks_conn.commit()
+                        new_ns = sorted((n for n, _, _ in numbers), reverse=True)
+                        print(f"  [CORRECTION] {sorted(old_nums, reverse=True)} → {new_ns} for {person}")
+                        for n, d, _ in sorted(numbers, key=lambda x: x[0], reverse=True):
+                            save_drink(drinks_conn, n, person, d, old_date, old_imessage_id, "auto")
+                        _recently_resolved[handle_id] = (frozenset(n for n, _, _ in numbers), time.time())
+                    else:
+                        # Single drink correction: update in-place
+                        old_num = min(old_nums)
+                        drinks_conn.execute(
+                            "UPDATE drinks SET drink_number=?" + (", details=?" if new_details else "") + " WHERE drink_number=? AND person=?",
+                            ([new_num, new_details, old_num, person] if new_details else [new_num, old_num, person])
+                        )
+                        drinks_conn.commit()
+                        _recently_resolved[handle_id] = (frozenset([new_num]), time.time())
+                        print(f"  [CORRECTION] #{old_num} → #{new_num} for {person}")
                     return
 
         # This sender already has a pending photo → pair with it
