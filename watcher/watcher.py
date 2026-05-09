@@ -21,6 +21,7 @@ FLAG_LOG  = os.path.expanduser("~/drinks/data/flagged.log")
 SELF      = os.getenv("SELF_HANDLE",    "+17812050278")  # Mac Mini owner; handle_id is NULL for self-sent messages
 POLL_INTERVAL = 2
 PENDING_TIMEOUT = 90
+CONTINUATION_WINDOW = 30  # after logging, photo stays live for additional numbers
 CORRECTION_WINDOW = 1800  # 30 min: starred correction can fix a recently logged drink
 
 _recently_resolved = {}  # handle_id → (drink_number, logged_at)
@@ -36,6 +37,7 @@ class PendingLog:
     started_at: float = field(default_factory=time.time)
     raw_msgs: list = field(default_factory=list)
     needs_math: bool = False
+    continuing: bool = False  # photo stays live after first resolve
 
 pending: dict = {}  # handle_id → PendingLog
 
@@ -208,6 +210,16 @@ def save_drink(conn, drink_number, person, details, date, imessage_id, source):
     except Exception as e:
         print(f"  Error saving #{drink_number}: {e}")
 
+def _continue(sender, last_num):
+    """After logging, keep photo alive for CONTINUATION_WINDOW so more numbers can pair."""
+    p = pending.get(sender)
+    if p:
+        p.numbers.clear()
+        p.raw_msgs.clear()
+        p.continuing = True
+        p.started_at = time.time()
+    _recently_resolved[sender] = (last_num, time.time())
+
 def try_resolve(sender, drinks_conn):
     """Attempt to log drinks for sender if we have both photo and number(s)."""
     p = pending.get(sender)
@@ -245,19 +257,16 @@ def try_resolve(sender, drinks_conn):
                 for i, n in enumerate(range_nums):
                     d = details if i == len(range_nums) - 1 else None
                     save_drink(drinks_conn, n, person, d, dt, photo_rowid, "auto")
-                _recently_resolved[sender] = (new_endpoint, time.time())
-                del pending[sender]
+                _continue(sender, new_endpoint)
                 return
         save_drink(drinks_conn, new_endpoint, person, details, dt, photo_rowid, "auto")
-        _recently_resolved[sender] = (new_endpoint, time.time())
-        del pending[sender]
+        _continue(sender, new_endpoint)
         return
 
     if len(p.numbers) == 1:
         num, details, _ = p.numbers[0]
         save_drink(drinks_conn, num, person, details, dt, photo_rowid, "auto")
-        _recently_resolved[sender] = (num, time.time())
-        del pending[sender]
+        _continue(sender, num)
         return
 
     # Multiple numbers — consecutive range logs immediately; non-consecutive waits for *correction
@@ -265,8 +274,7 @@ def try_resolve(sender, drinks_conn):
     if is_consecutive(sorted_nums):
         for num, details, _ in sorted(p.numbers, key=lambda x: x[0], reverse=True):
             save_drink(drinks_conn, num, person, details, dt, photo_rowid, "auto")
-        _recently_resolved[sender] = (min(n for n, _, _ in p.numbers), time.time())
-        del pending[sender]
+        _continue(sender, min(n for n, _, _ in p.numbers))
         return
 
     print(f"  [WAIT] {person}: non-consecutive {sorted_nums} — waiting for *correction")
@@ -378,10 +386,12 @@ def handle_message(msg, drinks_conn):
 
 def check_expirations(drinks_conn):
     now = time.time()
-    expired = [s for s, p in pending.items() if now - p.started_at > PENDING_TIMEOUT]
+    expired = [s for s, p in pending.items() if now - p.started_at > (CONTINUATION_WINDOW if p.continuing else PENDING_TIMEOUT)]
     for sender in expired:
         p = pending.pop(sender)
-        if p.photos and not p.numbers and not p.needs_math:
+        if p.continuing:
+            pass  # photo window closed after continuation, discard silently
+        elif p.photos and not p.numbers and not p.needs_math:
             pass  # random chat photo, discard silently
         elif p.numbers and not p.photos:
             flag("MISSING_PHOTO", p.raw_msgs)

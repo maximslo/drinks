@@ -250,6 +250,15 @@ def _s12(conn):
     inject("Liam", "996*", conn=conn)       # correct endpoint: fills 999→996
     w.check_expirations(conn)
 
+def _s13(conn):
+    "Numbers sent as separate messages after photo — continuation window pairs them"
+    seed_person(conn, "Liam", 1000)
+    inject("Liam", photo=True, conn=conn)
+    inject("Liam", "999", conn=conn)        # resolves, photo stays live
+    inject("Liam", "cheers!", conn=conn)    # ignored
+    inject("Liam", "998", conn=conn)        # pairs with same photo via continuation
+    w.check_expirations(conn)
+
 SCENARIOS = [
     ("photo → number (happy path)", _s1),
     ("photo + number in same message", _s2),
@@ -263,6 +272,7 @@ SCENARIOS = [
     ("unrelated chatter filtered by validation", _s10),
     ("same-tick correction overrides wrong number", _s11),
     ("bad range typo corrected with *endpoint", _s12),
+    ("separate messages after photo — continuation window", _s13),
 ]
 
 
