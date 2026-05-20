@@ -63,6 +63,7 @@ def parse_numbers(text):
     if not text:
         return []
     text = text.strip()
+    text = _preprocess(text)
 
     # Range: 5649-5647 or 50-48 — no floor, is_plausible validates
     m = re.search(r'(?<!\d)(\d+)\s*-\s*(\d+)(\*?)(?!\d)', text)
@@ -103,6 +104,14 @@ def parse_numbers(text):
         d = leftover if i == len(matches) - 1 else None
         result.append((num, d, starred))
     return result
+
+
+def _preprocess(text):
+    # Remove time patterns (10:30, 3:45pm, 10:30 AM) before number extraction
+    text = re.sub(r'\b\d{1,2}:\d{2}(?:\s*[aApP][mM])?\b', '', text)
+    # Collapse comma-thousands (10,000 → 10000); only matches \d{1-3},\d{3} groups
+    text = re.sub(r'\b(\d{1,3}(?:,\d{3})+)\b', lambda m: m.group(0).replace(',', ''), text)
+    return text
 
 
 def _leftover(text, start, end):
