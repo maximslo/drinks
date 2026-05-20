@@ -11,17 +11,18 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), '../.env'))
 
 sys.path.insert(0, os.path.dirname(__file__))
-from parser import parse_numbers, resolve_name
-from ai_parser import parse_ambiguous
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from parser import parse_numbers, resolve_name, PHONE_TO_NAME
 
 CHAT_DB   = os.getenv("CHAT_DB_PATH",  os.path.expanduser("~/Library/Messages/chat.db"))
 DRINKS_DB = os.getenv("DRINKS_DB_PATH", os.path.expanduser("~/drinks/data/drinks.db"))
+MSGS_DB   = os.getenv("MSGS_DB_PATH",  os.path.expanduser("~/drinks/data/messages.db"))
+DATA_DIR  = os.path.expanduser("~/drinks/data")
 CHAT_ID   = os.getenv("CHAT_ID",        "chat313739884378608609")
 FLAG_LOG  = os.path.expanduser("~/drinks/data/flagged.log")
 SELF      = os.getenv("SELF_HANDLE",    "+17812050278")  # Mac Mini owner; handle_id is NULL for self-sent messages
 POLL_INTERVAL = 2
 PENDING_TIMEOUT = 90
-CONTINUATION_WINDOW = 30  # after logging, photo stays live for additional numbers
 CORRECTION_WINDOW = 1800  # 30 min: starred correction can fix a recently logged drink
 
 _recently_resolved = {}  # handle_id → (drink_number, logged_at)
@@ -36,8 +37,6 @@ class PendingLog:
     numbers: list = field(default_factory=list)  # [(number, details, starred), ...]
     started_at: float = field(default_factory=time.time)
     raw_msgs: list = field(default_factory=list)
-    needs_math: bool = False
-    continuing: bool = False  # photo stays live after first resolve
 
 pending: dict = {}  # handle_id → PendingLog
 
@@ -158,12 +157,6 @@ def is_reaction(text):
     prefixes = ["loved", "liked", "disliked", "laughed at", "emphasized", "questioned", "reacted"]
     return any(text.lower().startswith(p) for p in prefixes)
 
-def is_math_request(text):
-    if not text:
-        return False
-    keywords = ["do the math", "someone count", "figure it out", "math pls", "math please"]
-    return any(k in text.lower() for k in keywords)
-
 def apple_ts_to_str(date):
     apple_epoch = 978307200
     ts = apple_epoch + date / 1e9
@@ -173,17 +166,6 @@ def is_consecutive(nums):
     """nums must be sorted descending."""
     return all(nums[i] - nums[i + 1] == 1 for i in range(len(nums) - 1))
 
-def is_plausible(numbers, person, conn):
-    """True if these drink numbers could plausibly be this person's next log."""
-    last = get_last_drink_number(conn, person)
-    if last is None:
-        return True  # no history — accept anything
-    if any(starred for _, _, starred in numbers):
-        return True  # explicit correction
-    sorted_nums = sorted([n for n, _, _ in numbers], reverse=True)
-    # counting down: accept next-in-sequence (last-1) or any earlier unlogged drink (> last)
-    return sorted_nums[0] >= last - 1 and is_consecutive(sorted_nums)
-
 
 # ─── Flagging ─────────────────────────────────────────────────────────────────
 
@@ -192,6 +174,90 @@ def flag(reason, messages):
         f.write(f"\n[FLAGGED: {reason}]\n")
         for m in messages:
             f.write(f"  ROWID={m[0]} handle={m[1]} text={m[2]!r}\n")
+
+
+# ─── Face recognition ─────────────────────────────────────────────────────────
+
+_name_lower_to_canonical = {v.lower(): v for v in PHONE_TO_NAME.values()}
+
+def _canonical_name(name):
+    """Map a face-recognized name to the canonical name used in drinks.db."""
+    return _name_lower_to_canonical.get(name.lower(), name)
+
+
+_recognize_fn = None
+
+def _get_recognize():
+    global _recognize_fn
+    if _recognize_fn is None:
+        try:
+            from facial.recognize import recognize
+            _recognize_fn = recognize
+            print("  [FACES] recognition model loaded")
+        except Exception as e:
+            print(f"  [FACES] recognize unavailable: {e}")
+            _recognize_fn = lambda path: []
+    return _recognize_fn
+
+def identify_faces(photo_rowids):
+    """Return unique high-confidence names across all photos, sorted by confidence desc."""
+    recognize = _get_recognize()
+    seen = {}
+    try:
+        msgs_conn = sqlite3.connect(f"file:{MSGS_DB}?mode=ro", uri=True)
+        chat_conn = sqlite3.connect(f"file:{CHAT_DB}?mode=ro", uri=True)
+        try:
+            for rowid in photo_rowids:
+                # Try synced messages.db first, fall back to chat.db attachment table
+                row = msgs_conn.execute(
+                    "SELECT attachment_path FROM messages WHERE rowid=?", (rowid,)
+                ).fetchone()
+                if row and row[0]:
+                    path = os.path.join(DATA_DIR, row[0])
+                else:
+                    chat_row = chat_conn.execute("""
+                        SELECT a.filename FROM attachment a
+                        JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
+                        WHERE maj.message_id = ?
+                    """, (rowid,)).fetchone()
+                    if not chat_row or not chat_row[0]:
+                        print(f"  [FACES] rowid={rowid} → no attachment found in messages.db or chat.db")
+                        continue
+                    path = os.path.expanduser(chat_row[0])
+                if not os.path.exists(path):
+                    print(f"  [FACES] rowid={rowid} → file not found: {path}")
+                    continue
+                raw = recognize(path)
+                print(f"  [FACES] rowid={rowid} → {len(raw)} face(s) detected in {os.path.basename(path)}")
+                for r in raw:
+                    raw_name = r["name"]
+                    canonical = _canonical_name(raw_name)
+                    is_member = canonical in _name_lower_to_canonical.values()
+                    print(f"    cluster={raw_name!r} → {canonical!r} conf={r['confidence']:.3f} member={is_member}")
+                    if is_member and r["confidence"] > seen.get(canonical, 0):
+                        seen[canonical] = r["confidence"]
+        finally:
+            chat_conn.close()
+            msgs_conn.close()
+    except Exception as e:
+        print(f"  [FACES] error: {e}")
+    names = [n for n, _ in sorted(seen.items(), key=lambda x: -x[1])]
+    print(f"  [FACES] assigned candidates: {names if names else 'none (all → sender)'}")
+    return names
+
+def _assign_drinks(sorted_nums, numbers, sender_name, face_names):
+    """Greedy: one drink per identified face (highest confidence first), leftovers → sender."""
+    details_map = {n: d for n, d, _ in numbers}
+    unassigned = list(sorted_nums)
+    result = []
+    for name in face_names:
+        if not unassigned:
+            break
+        num = unassigned.pop(0)
+        result.append((num, name, details_map.get(num)))
+    for num in unassigned:
+        result.append((num, sender_name, details_map.get(num)))
+    return sorted(result, key=lambda x: -x[0])
 
 
 # ─── Core logic ───────────────────────────────────────────────────────────────
@@ -210,15 +276,10 @@ def save_drink(conn, drink_number, person, details, date, imessage_id, source):
     except Exception as e:
         print(f"  Error saving #{drink_number}: {e}")
 
-def _continue(sender, logged_nums):
-    """After logging, keep photo alive for CONTINUATION_WINDOW so more numbers can pair."""
+def _finish(sender, logged_nums):
+    """After logging, record what was logged for corrections and close pending."""
     nums = frozenset([logged_nums] if isinstance(logged_nums, int) else logged_nums)
-    p = pending.get(sender)
-    if p:
-        p.numbers.clear()
-        p.raw_msgs.clear()
-        p.continuing = True
-        p.started_at = time.time()
+    pending.pop(sender, None)
     _recently_resolved[sender] = (nums, time.time())
 
 def try_resolve(sender, drinks_conn):
@@ -226,22 +287,12 @@ def try_resolve(sender, drinks_conn):
     p = pending.get(sender)
     if not p or not p.photos:
         return
-    if not p.numbers and not p.needs_math:
+    if not p.numbers:
         return
 
     photo_rowid, photo_date = p.photos[0]
     person = resolve_name(sender)
     dt = apple_ts_to_str(photo_date)
-
-    if p.needs_math:
-        ai_results = parse_ambiguous(p.raw_msgs, "MATH_REQUEST")
-        if ai_results:
-            for r in ai_results:
-                save_drink(drinks_conn, r["drink_number"], r["person"], r.get("details"), dt, photo_rowid, "ai")
-        else:
-            flag("MATH_REQUEST", p.raw_msgs)
-        del pending[sender]
-        return
 
     # Starred = correction
     starred = [(n, d, s) for n, d, s in p.numbers if s]
@@ -249,20 +300,6 @@ def try_resolve(sender, drinks_conn):
         new_endpoint, details, _ = starred[-1]
         non_starred = [n for n, _, s in p.numbers if not s]
         last = get_last_drink_number(drinks_conn, person)
-
-        if p.continuing and non_starred:
-            # Previously logged drinks were wrong — undo them, log the correct set
-            old_entry = _recently_resolved.get(sender)
-            if old_entry:
-                old_nums, _ = old_entry
-                for old_n in sorted(old_nums, reverse=True):
-                    drinks_conn.execute("DELETE FROM drinks WHERE drink_number=? AND person=?", (old_n, person))
-                drinks_conn.commit()
-                print(f"  [UNDO] deleted {sorted(old_nums, reverse=True)} for {person}")
-            for n, d, _ in sorted(p.numbers, key=lambda x: x[0], reverse=True):
-                save_drink(drinks_conn, n, person, d, dt, photo_rowid, "auto")
-            _continue(sender, {n for n, _, _ in p.numbers})
-            return
 
         if non_starred and last is not None:
             # Bad range never logged — reconstruct from last-1 down to endpoint
@@ -274,25 +311,27 @@ def try_resolve(sender, drinks_conn):
                 for i, n in enumerate(range_nums):
                     d = details if i == len(range_nums) - 1 else None
                     save_drink(drinks_conn, n, person, d, dt, photo_rowid, "auto")
-                _continue(sender, set(range_nums))
+                _finish(sender, set(range_nums))
                 return
 
         save_drink(drinks_conn, new_endpoint, person, details, dt, photo_rowid, "auto")
-        _continue(sender, {new_endpoint})
+        _finish(sender, {new_endpoint})
         return
 
     if len(p.numbers) == 1:
         num, details, _ = p.numbers[0]
         save_drink(drinks_conn, num, person, details, dt, photo_rowid, "auto")
-        _continue(sender, num)
+        _finish(sender, num)
         return
 
     # Multiple numbers — consecutive range logs immediately; non-consecutive waits for *correction
     sorted_nums = sorted([n for n, _, _ in p.numbers], reverse=True)
     if is_consecutive(sorted_nums):
-        for num, details, _ in sorted(p.numbers, key=lambda x: x[0], reverse=True):
-            save_drink(drinks_conn, num, person, details, dt, photo_rowid, "auto")
-        _continue(sender, {n for n, _, _ in p.numbers})
+        face_names = identify_faces([r for r, _ in p.photos])
+        assignments = _assign_drinks(sorted_nums, p.numbers, person, face_names)
+        for num, assigned_person, details in assignments:
+            save_drink(drinks_conn, num, assigned_person, details, dt, photo_rowid, "auto")
+        _finish(sender, {n for n, _, _ in p.numbers})
         return
 
     print(f"  [WAIT] {person}: non-consecutive {sorted_nums} — waiting for *correction")
@@ -333,7 +372,8 @@ def handle_message(msg, drinks_conn):
 
     # Case 2: photo only — open/extend pending for this sender
     if has_attachment:
-        last = get_last_drink_number(drinks_conn, person)
+        row = drinks_conn.execute("SELECT MIN(drink_number) FROM drinks").fetchone()
+        last = row[0] if row and row[0] is not None else None
         expected = f"#{last - 1}" if last else "any (no history)"
         print(f"  [CASE2] photo only → waiting for number from {person} | next expected: {expected}")
         if handle_id not in pending:
@@ -342,14 +382,7 @@ def handle_message(msg, drinks_conn):
         pending[handle_id].raw_msgs.append(msg)
         return
 
-    # Case 3: math request — flag pending for AI
-    if is_math_request(clean):
-        if handle_id in pending:
-            pending[handle_id].needs_math = True
-            pending[handle_id].raw_msgs.append(msg)
-        return
-
-    # Case 4: number(s) only
+    # Case 3: numbers only number(s) only
     if numbers:
         # Starred correction within window → fix recently logged drink(s)
         starred = [(n, d) for n, d, s in numbers if s]
@@ -395,41 +428,39 @@ def handle_message(msg, drinks_conn):
             pending[handle_id].raw_msgs.append(msg)
             return
 
-        # Another sender has a pending photo and this number matches them → attribute to photo sender
+        # Another sender has a pending photo → attribute to them
         for photo_sender, p in pending.items():
             if photo_sender != handle_id and p.photos and not p.numbers:
                 photo_person = resolve_name(photo_sender)
-                if is_plausible(numbers, photo_person, drinks_conn):
-                    print(f"  [CASE4] attributing to {photo_person}'s pending photo")
-                    p.numbers.extend(numbers)
-                    p.raw_msgs.append(msg)
-                    return
+                print(f"  [CASE4] attributing to {photo_person}'s pending photo")
+                p.numbers.extend(numbers)
+                p.raw_msgs.append(msg)
+                return
 
-        # No pending photo anywhere — validate before opening a pending window for this sender
-        last = get_last_drink_number(drinks_conn, person)
+        # No pending photo — check sequence then open a window
+        row = drinks_conn.execute("SELECT MIN(drink_number) FROM drinks").fetchone()
+        last = row[0] if row and row[0] is not None else None
         sorted_nums = sorted([n for n, _, _ in numbers], reverse=True)
-        expected = f"≤#{last + 1} (any unlogged)" if last else "any"
-        if is_plausible(numbers, person, drinks_conn):
-            print(f"  [CASE4] no pending photo | last=#{last} expected={expected} got=#{sorted_nums[0]} → plausible, waiting for photo")
-            if handle_id not in pending:
-                pending[handle_id] = PendingLog(sender=handle_id)
-            pending[handle_id].numbers.extend(numbers)
-            pending[handle_id].raw_msgs.append(msg)
-            return
-        else:
-            print(f"  [SKIP] no pending photo | last=#{last} expected={expected} got=#{sorted_nums[0]} → not plausible, ignoring")
+        starred = any(s for _, _, s in numbers)
+        if last is not None and not starred:
+            if sorted_nums[0] != last - 1 or not is_consecutive(sorted_nums):
+                print(f"  [SKIP] expected #{last - 1}, got #{sorted_nums[0]} — not next in sequence")
+                return
+        print(f"  [CASE4] no pending photo | got={sorted_nums} → waiting for photo")
+        if handle_id not in pending:
+            pending[handle_id] = PendingLog(sender=handle_id)
+        pending[handle_id].numbers.extend(numbers)
+        pending[handle_id].raw_msgs.append(msg)
 
     if not numbers and not has_attachment:
         print(f"  [SKIP] no numbers, no photo | {_pending_summary()}")
 
 def check_expirations(drinks_conn):
     now = time.time()
-    expired = [s for s, p in pending.items() if now - p.started_at > (CONTINUATION_WINDOW if p.continuing else PENDING_TIMEOUT)]
+    expired = [s for s, p in pending.items() if now - p.started_at > PENDING_TIMEOUT]
     for sender in expired:
         p = pending.pop(sender)
-        if p.continuing:
-            pass  # photo window closed after continuation, discard silently
-        elif p.photos and not p.numbers and not p.needs_math:
+        if p.photos and not p.numbers:
             pass  # random chat photo, discard silently
         elif p.numbers and not p.photos:
             flag("MISSING_PHOTO", p.raw_msgs)

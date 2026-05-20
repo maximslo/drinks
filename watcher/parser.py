@@ -111,6 +111,8 @@ def _preprocess(text):
     text = re.sub(r'\b\d{1,2}:\d{2}(?:\s*[aApP][mM])?\b', '', text)
     # Collapse comma-thousands (10,000 → 10000); only matches \d{1-3},\d{3} groups
     text = re.sub(r'\b(\d{1,3}(?:,\d{3})+)\b', lambda m: m.group(0).replace(',', ''), text)
+    # Normalize leading * to trailing (* 9999 → 9999*)
+    text = re.sub(r'\*(\d+)', r'\1*', text)
     return text
 
 
