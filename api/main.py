@@ -13,6 +13,21 @@ DRINKS_DB = os.path.expanduser("~/drinks/data/drinks.db")
 MESSAGES_DB = os.path.expanduser("~/drinks/data/messages.db")
 DATA_DIR = os.path.expanduser("~/drinks/data")
 
+BASELINE = {
+    "Hunter": 963,
+    "Joseph": 820,
+    "Jacob":  784,
+    "Lucas":  579,
+    "Miggy":  361,
+    "Liam":   245,
+    "Marek":  242,
+    "Maxim":  212,
+    "Cole":   195,
+    "Avi":    168,
+    "Owen":    96,
+    "Kacper":  73,
+}
+
 PHONE_TO_NAME = {
     "+17147429858": "Hunter",   "+16037930991": "Lucas",
     "+18453002491": "Liam",     "+16173097007": "Joseph",
@@ -62,10 +77,21 @@ def get_leaderboard_data():
         SELECT person, COUNT(*) as total, MAX(drink_number) as latest_drink_number
         FROM drinks
         GROUP BY person
-        ORDER BY total DESC
     """).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    logged = {r["person"]: dict(r) for r in rows}
+    result = []
+    for person, baseline in BASELINE.items():
+        logged_total = logged.get(person, {}).get("total", 0)
+        latest = logged.get(person, {}).get("latest_drink_number")
+        result.append({
+            "person": person,
+            "total": baseline + logged_total,
+            "baseline": baseline,
+            "logged": logged_total,
+            "latest_drink_number": latest,
+        })
+    return sorted(result, key=lambda r: r["total"], reverse=True)
 
 
 # ─── SSE leaderboard ──────────────────────────────────────────────────────────
