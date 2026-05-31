@@ -269,7 +269,7 @@
 </div>
 
 <script>
-  const API = 'http://localhost:8000';
+  const API = window.location.origin.includes('localhost') ? 'http://localhost:8000' : '';
   const PAGE = 100;
 
   const NAMES = ['Avi','Cole','Hunter','Jacob','Joseph','Kacper','Liam','Lucas','Marek','Miggy','Owen'];

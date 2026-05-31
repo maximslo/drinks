@@ -203,7 +203,7 @@
 <div class="updated" id="updated"></div>
 
 <script>
-  const API   = 'http://localhost:8000';
+  const API   = window.location.origin.includes('localhost') ? 'http://localhost:8000' : '';
   const GOAL  = 10000;
 
   // Deterministic hue per name (same as messages.html)
@@ -252,26 +252,24 @@
     setTimeout(() => { dot.style.background = ''; }, 300);
   }
 
-  function connect() {
+  async function fetchAndRender() {
     const dot  = document.getElementById('dot');
     const text = document.getElementById('live-text');
-
-    const es = new EventSource(`${API}/leaderboard/stream`);
-
-    es.onopen = () => {
+    try {
+      const res  = await fetch(`${API}/leaderboard`);
+      if (!res.ok) throw new Error(res.status);
+      const data = await res.json();
+      render(data);
       dot.className = 'dot live';
       text.textContent = 'Live';
-    };
-
-    es.onmessage = (e) => render(JSON.parse(e.data));
-
-    es.onerror = () => {
+    } catch (e) {
       dot.className = 'dot offline';
-      text.textContent = 'Reconnecting…';
-    };
+      text.textContent = 'Offline';
+    }
   }
 
-  connect();
+  fetchAndRender();
+  setInterval(fetchAndRender, 5000);
 </script>
 </body>
 </html>
