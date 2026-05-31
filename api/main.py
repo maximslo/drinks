@@ -14,18 +14,18 @@ MESSAGES_DB = os.path.expanduser("~/drinks/data/messages.db")
 DATA_DIR = os.path.expanduser("~/drinks/data")
 
 BASELINE = {
-    "Hunter": 963,
-    "Joseph": 820,
-    "Jacob":  784,
-    "Lucas":  579,
-    "Miggy":  361,
-    "Liam":   245,
-    "Marek":  242,
-    "Maxim":  212,
-    "Cole":   195,
-    "Avi":    168,
-    "Owen":    96,
-    "Kacper":  73,
+    "Hunter": 992,
+    "Joseph": 866,
+    "Jacob":  798,
+    "Lucas":  587,
+    "Miggy":  375,
+    "Marek":  267,
+    "Maxim":  226,
+    "Cole":   218,
+    "Avi":    194,
+    "Liam":   263,
+    "Owen":   119,
+    "Kacper":  95,
 }
 
 PHONE_TO_NAME = {

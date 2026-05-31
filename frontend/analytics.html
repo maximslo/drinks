@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Drink Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <style>
+    :root {
+      --bg:      #1c1c1e;
+      --card:    #2c2c2e;
+      --surface: #3a3a3c;
+      --text:    #f2f2f7;
+      --muted:   #8e8e93;
+      --rule:    #3a3a3c;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 48px 24px 96px;
+    }
+
+    header { margin-bottom: 56px; border-bottom: 1px solid var(--rule); padding-bottom: 24px; }
+    header h1 { font-size: 34px; font-weight: 700; letter-spacing: -1px; line-height: 1.1; }
+    header p  { font-size: 15px; color: var(--muted); margin-top: 8px; }
+
+    section { margin-bottom: 64px; }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    h2 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+      margin-bottom: 4px;
+    }
+
+    .dek {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+
+svg text { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; }
+
+    #loading {
+      text-align: center;
+      color: var(--muted);
+      padding: 80px 0;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>One Drink At A Time</h1>
+  <p>5,000 drinks. Every square, icon, and dot below is real data.</p>
+</header>
+
+<div id="loading">Loading…</div>
+<div id="content" style="display:none">
+
+  <section>
+    <div class="section-label">Overview</div>
+    <h2>The full picture</h2>
+    <p class="dek" id="cluster-dek">5,000 drinks. Each square is one drink, grouped by type.</p>
+    <div id="cluster"></div>
+  <div id="cluster-legend" style="display:flex;flex-wrap:wrap;gap:16px 24px;margin-top:14px"></div>
+  </section>
+
+  <section>
+    <div class="section-label">By person</div>
+    <h2>Who drank what</h2>
+    <p class="dek" id="isotype-dek">Each icon represents drinks, ordered and colored by type.</p>
+    <div id="person-isotype"></div>
+  </section>
+
+  <section>
+    <div class="section-label">By drink</div>
+    <h2>Top 15 specific drinks</h2>
+    <p class="dek">Named drinks only — blanks and unknowns excluded. Normalized across spelling variants.</p>
+    <div id="top-drinks"></div>
+  </section>
+
+  <section>
+    <div class="section-label">Over time</div>
+    <h2>Month by month</h2>
+    <p class="dek">Total drinks logged per month, from the first log to the 5,000th.</p>
+    <div id="timeline"></div>
+  </section>
+
+</div>
+
+<script>
+// ─── Constants ─────────────────────────────────────────────────────────────────
+
+const TYPE_COLORS = {
+  Beer:     '#FF9F0A',
+  Cocktail: '#32ADE6',
+  Shot:     '#FF375F',
+  Wine:     '#BF5AF2',
+  Seltzer:  '#30D158',
+  Cider:    '#FFD60A',
+  Other:    '#8E8E93',
+};
+
+const TYPE_EMOJI = {
+  Beer:     '🍺',
+  Cocktail: '🍸',
+  Shot:     '🥃',
+  Wine:     '🍷',
+  Seltzer:  '🥤',
+  Cider:    '🍎',
+  Other:    '🍹',
+};
+
+const TYPE_ORDER = ['Beer', 'Cocktail', 'Wine', 'Seltzer', 'Shot', 'Cider', 'Other'];
+
+const MONTH_ORDER = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December',
+];
+
+const NORMALIZE = {
+  'corona': 'Corona', 'corona light': 'Corona', 'corona extra': 'Corona',
+  'margarita': 'Margarita', 'frozen marg': 'Margarita', 'marg': 'Margarita',
+  'margs': 'Margarita', 'frozen margarita': 'Margarita', "frozen margarita'": 'Margarita',
+  'michelob ultra': 'Michelob Ultra', 'michelin ultra': 'Michelob Ultra',
+  'modelo': 'Modelo', 'modelo especial': 'Modelo',
+  'coors light': 'Coors Light', 'bud light': 'Bud Light',
+  'pbr': 'Pabst Blue Ribbon', 'pabst blue ribbon': 'Pabst Blue Ribbon',
+  'gin and tonic': 'Gin and Tonic', 'gin & tonic': 'Gin and Tonic',
+  'g&t': 'Gin and Tonic', 'g & t': 'Gin and Tonic',
+};
+
+// ─── Parsing ───────────────────────────────────────────────────────────────────
+
+function titleCase(s) {
+  if (!s) return '';
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+function normalizeDrink(raw) {
+  if (!raw) return null;
+  const s = raw.trim().toLowerCase();
+  if (!s || s === '?') return null;
+  return NORMALIZE[s] ?? s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+function parseCSV(text) {
+  const rows = [];
+  for (const line of text.split('\n').slice(1)) {
+    const t = line.trim();
+    if (!t) continue;
+    const cols = t.split(',');
+    const drinkNum = parseInt(cols[0]);
+    if (isNaN(drinkNum)) continue;
+    const drinker = (cols[1] || '').trim();
+    const type    = titleCase((cols[2] || '').trim());
+    const info    = (cols[3] || '').trim();
+    const date    = (cols[4] || '').trim();
+    if (!drinker || !type || !date) continue;
+    rows.push({ drinkNum, drinker, type, info, date });
+  }
+  return rows;
+}
+
+function inferYears(rows) {
+  // CSV is sorted 9999→5000 = oldest→newest. Year increases when month index decreases.
+  let year = 2024, prevMIdx = -1;
+  for (const row of rows) {
+    const mIdx = MONTH_ORDER.indexOf(row.date.split(' ')[0]);
+    if (mIdx < 0) { row.year = year; continue; }
+    if (prevMIdx >= 0 && mIdx < prevMIdx) year++;
+    row.year = year;
+    prevMIdx = mIdx;
+  }
+}
+
+function aggregate(rows) {
+  const typeBreakdown = {};
+  const drinkByType   = {};
+  const personType    = {};
+  const monthCounts   = {};
+
+  for (const { type, info, drinker, date, year } of rows) {
+    const drink = normalizeDrink(info);
+    const month = date.split(' ')[0];
+
+    typeBreakdown[type] = (typeBreakdown[type] || 0) + 1;
+
+    if (drink) {
+      if (!drinkByType[drink]) drinkByType[drink] = { count: 0, type };
+      drinkByType[drink].count++;
+    }
+
+    if (!personType[drinker]) personType[drinker] = {};
+    personType[drinker][type] = (personType[drinker][type] || 0) + 1;
+
+    if (MONTH_ORDER.includes(month) && year) {
+      const key = `${month} ${year}`;
+      monthCounts[key] = (monthCounts[key] || 0) + 1;
+    }
+  }
+
+  const topDrinks = Object.entries(drinkByType)
+    .map(([name, { count, type }]) => ({ name, count, type }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15);
+
+  const sortedMonths = Object.keys(monthCounts).sort((a, b) => {
+    const [ma, ya] = a.split(' '), [mb, yb] = b.split(' ');
+    return (parseInt(ya) - parseInt(yb)) || (MONTH_ORDER.indexOf(ma) - MONTH_ORDER.indexOf(mb));
+  });
+
+  const personTotals = p => Object.values(personType[p]).reduce((s, v) => s + v, 0);
+  const sortedPeople = Object.keys(personType).sort((a, b) => personTotals(b) - personTotals(a));
+
+  return { typeBreakdown, topDrinks, personType, monthCounts, sortedMonths, sortedPeople };
+}
+
+// ─── Treemap ───────────────────────────────────────────────────────────────────
+
+const DRINK_DATA = [
+  { type: 'Beer', children: [
+    { name: 'Corona',         count: 287 },
+    { name: 'Coors Light',    count: 279 },
+    { name: 'Guinness',       count: 168 },
+    { name: 'Bud Light',      count: 148 },
+    { name: 'Modelo',         count: 117 },
+    { name: 'Bapple',         count: 100 },
+    { name: 'Michelob Ultra', count: 89  },
+    { name: 'Kona',           count: 64  },
+    { name: 'Tsingtao',       count: 57  },
+    { name: 'PBR',            count: 42  },
+    { name: 'Miller Lite',    count: 38  },
+    { name: 'Busch',          count: 38  },
+    { name: 'Bintang',        count: 30  },
+    { name: 'Sapporo',        count: 21  },
+    { name: 'Singha',         count: 21  },
+    { name: 'Other',          count: 954, other: true },
+  ]},
+  { type: 'Cocktail', children: [
+    { name: 'Margarita',        count: 91  },
+    { name: 'Gin & Tonic',      count: 68  },
+    { name: 'Cutwater',         count: 58  },
+    { name: 'Espresso Martini', count: 42  },
+    { name: 'Vodka Redbull',    count: 29  },
+    { name: 'Rum & Coke',       count: 27  },
+    { name: 'Long Island',      count: 20  },
+    { name: 'Vodka Soda',       count: 20  },
+    { name: 'Moscow Mule',      count: 18  },
+    { name: 'Spritz',           count: 24  },
+    { name: 'Jagerbomb',        count: 13  },
+    { name: 'Mojito',           count: 12  },
+    { name: 'Vodka Cran',       count: 11  },
+    { name: 'Smirnoff Ice',     count: 10  },
+    { name: 'Other',            count: 561, other: true },
+  ]},
+  { type: 'Shot', children: [
+    { name: 'Tequila',    count: 173 },
+    { name: 'Vodka',      count: 76  },
+    { name: 'Whiskey',    count: 74  },
+    { name: 'Fireball',   count: 43  },
+    { name: 'Jello Shot', count: 31  },
+    { name: 'Jäger',      count: 13  },
+    { name: 'Limoncello', count: 10  },
+    { name: 'Green Tea',  count: 10  },
+    { name: 'Bourbon',    count: 7   },
+    { name: 'Gin',        count: 7   },
+    { name: 'Other',      count: 102, other: true },
+  ]},
+  { type: 'Wine', children: [
+    { name: 'Red Wine',   count: 192 },
+    { name: 'White Wine', count: 174 },
+    { name: 'Sangria',    count: 40  },
+    { name: 'Rosé',       count: 19  },
+    { name: 'Sake',       count: 18  },
+    { name: 'Other',      count: 46,  other: true },
+  ]},
+  { type: 'Seltzer', children: [
+    { name: 'Downeast',      count: 189 },
+    { name: 'Strong Zero',   count: 44  },
+    { name: 'High Noon',     count: 30  },
+    { name: 'Angry Orchard', count: 25  },
+    { name: 'Bold Rock',     count: 21  },
+    { name: 'Somersby',      count: 9   },
+    { name: 'Other',         count: 82,  other: true },
+  ]},
+  { type: 'Other', children: [
+    { name: 'Soju',       count: 60 },
+    { name: 'Twisted Tea',count: 10 },
+    { name: 'Other',      count: 17, other: true },
+  ]},
+  { type: 'Cider', children: [{ name: 'Cider', count: 21 }] },
+];
+
+function renderTreemap() {
+  const W = document.getElementById('cluster').getBoundingClientRect().width || 852;
+  const H = 560;
+  const HEADER = 22;
+
+  document.getElementById('cluster-dek').textContent =
+    'Bigger square = more drinks. Grouped by type, broken down by specific drink.';
+
+  // Exclude unlabeled "other" items from sizing so named drinks fill each group fully.
+  // Their count is surfaced only in the group header label.
+  const root = d3.hierarchy({ children: DRINK_DATA })
+    .sum(d => (!d.other && d.count) ? d.count : 0)
+    .sort((a, b) => b.value - a.value);
+
+  d3.treemap()
+    .size([W, H])
+    .tile(d3.treemapSquarify)
+    .paddingInner(d => d.depth === 1 ? 3 : 2)
+    .paddingOuter(3)
+    .round(true)(root);
+
+  const svg = d3.select('#cluster').append('svg').attr('width', W).attr('height', H);
+
+  // ── Legend below the treemap ──
+  const legend = document.getElementById('cluster-legend');
+  root.children.sort((a, b) => b.value - a.value).forEach(group => {
+    const type      = group.data.type;
+    const color     = TYPE_COLORS[type];
+    const unlabeled = group.data.children?.find(c => c.other)?.count ?? 0;
+    const total     = group.value + unlabeled;
+
+    const item = document.createElement('div');
+    item.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:13px;color:#f2f2f7';
+    item.innerHTML = `
+      <span style="width:11px;height:11px;border-radius:2px;background:${color};flex-shrink:0;display:inline-block"></span>
+      <span style="font-weight:600">${type}</span>
+      <span style="color:#8e8e93">${total.toLocaleString()}${unlabeled ? ` <span style="font-size:11px">(+${unlabeled.toLocaleString()} unlabeled)</span>` : ''}</span>`;
+    legend.appendChild(item);
+  });
+
+  // ── Specific drink cells — skip unlabeled, they're noted in the legend ──
+  root.leaves().forEach(leaf => {
+    if (leaf.data.other) return;
+
+    const type  = leaf.parent.data.type;
+    const color = TYPE_COLORS[type];
+    const x = leaf.x0, y = leaf.y0;
+    const w = leaf.x1 - leaf.x0, h = leaf.y1 - leaf.y0;
+    const cx = x + w / 2, cy = y + h / 2;
+
+    if (w < 2 || h < 2) return;
+
+    svg.append('rect')
+      .attr('x', x).attr('y', y).attr('width', w).attr('height', h)
+      .attr('rx', 3).attr('fill', color).attr('opacity', 0.78);
+
+    if (w < 28 || h < 16) return;
+
+    const P       = 5;
+    const nameSz  = Math.min(13, Math.max(9, w * 0.13));
+    const hasCount = h > nameSz * 2 + P * 3;
+
+    svg.append('text')
+      .attr('x', x + P).attr('y', y + P + nameSz)
+      .attr('font-size', `${nameSz}px`).attr('font-weight', '600').attr('fill', '#fff')
+      .attr('font-family', "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif")
+      .text(leaf.data.name);
+
+    if (hasCount) {
+      svg.append('text')
+        .attr('x', x + P).attr('y', y + P + nameSz * 2 + 2)
+        .attr('font-size', `${Math.min(11, Math.max(8, nameSz * 0.85))}px`)
+        .attr('fill', 'rgba(255,255,255,0.65)')
+        .attr('font-family', "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif")
+        .text(leaf.data.count.toLocaleString());
+    }
+  });
+}
+
+// ─── Per-Person Isotype ────────────────────────────────────────────────────────
+
+function renderPersonIsotype(personType, sortedPeople) {
+  const W         = document.getElementById('person-isotype').getBoundingClientRect().width || 852;
+  const LABEL_W   = 74;
+  const COUNT_W   = 48;
+  const ICON_W    = W - LABEL_W - COUNT_W - 8;
+  const ICON_SIZE = 20;
+  const ICON_GAP  = 2;
+  const ROW_H     = 30;
+
+  const totals     = p => Object.values(personType[p]).reduce((s, v) => s + v, 0);
+  const maxTotal   = Math.max(...sortedPeople.map(totals));
+  const maxIcons   = Math.floor(ICON_W / (ICON_SIZE + ICON_GAP));
+  const perIcon    = Math.ceil(maxTotal / maxIcons);
+
+  document.getElementById('isotype-dek').textContent =
+    `Each icon = ${perIcon} drinks, ordered and colored by type.`;
+
+  const svgH = sortedPeople.length * ROW_H + 4;
+  const svg  = d3.select('#person-isotype').append('svg')
+    .attr('width', W).attr('height', svgH);
+
+  sortedPeople.forEach((person, pi) => {
+    const y     = pi * ROW_H;
+    const types = personType[person];
+    const total = totals(person);
+
+    // Name
+    svg.append('text')
+      .attr('x', LABEL_W - 6).attr('y', y + ROW_H / 2 + 5)
+      .attr('text-anchor', 'end').attr('font-size', '13px').attr('fill', '#f2f2f7')
+      .text(person);
+
+    // Total count
+    svg.append('text')
+      .attr('x', W - 2).attr('y', y + ROW_H / 2 + 5)
+      .attr('text-anchor', 'end').attr('font-size', '11px').attr('fill', '#8e8e93')
+      .text(total.toLocaleString());
+
+    // Build icon list using largest-remainder allocation
+    const numIcons = Math.round(total / perIcon);
+    const entries  = TYPE_ORDER.filter(t => types[t] > 0).map(t => ({ type: t, exact: (types[t] / perIcon) }));
+    const floored  = entries.map(e => ({ ...e, n: Math.floor(e.exact) }));
+    let assigned   = floored.reduce((s, e) => s + e.n, 0);
+    const rem      = entries.map((e, i) => ({ i, r: e.exact - floored[i].n }))
+      .sort((a, b) => b.r - a.r);
+    for (let k = 0; assigned < numIcons && k < rem.length; k++, assigned++) floored[rem[k].i].n++;
+
+    const icons = floored.flatMap(({ type, n }) => Array(n).fill(type));
+
+    let ix = LABEL_W;
+    for (const type of icons) {
+      svg.append('text')
+        .attr('x', ix + ICON_SIZE / 2).attr('y', y + ROW_H / 2 + 6)
+        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+        .attr('font-size', `${ICON_SIZE - 1}px`)
+        .text(TYPE_EMOJI[type] || '●');
+      ix += ICON_SIZE + ICON_GAP;
+    }
+  });
+}
+
+// ─── Top 15 Lollipop ──────────────────────────────────────────────────────────
+
+function renderTopDrinks(topDrinks) {
+  const W      = document.getElementById('top-drinks').getBoundingClientRect().width || 852;
+  const margin = { top: 8, right: 52, bottom: 24, left: 168 };
+  const width  = W - margin.left - margin.right;
+  const rowH   = 34;
+  const height = topDrinks.length * rowH;
+
+  const reversed = [...topDrinks].reverse();
+
+  const x = d3.scaleLinear()
+    .domain([0, d3.max(reversed, d => d.count) * 1.12])
+    .range([0, width]);
+
+  const y = d3.scaleBand()
+    .domain(reversed.map(d => d.name))
+    .range([height, 0])
+    .padding(0.35);
+
+  const svg = d3.select('#top-drinks').append('svg')
+    .attr('width', W).attr('height', height + margin.top + margin.bottom)
+    .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // Vertical grid
+  svg.append('g')
+    .call(d3.axisBottom(x).ticks(5).tickSize(-height).tickFormat(''))
+    .attr('transform', `translate(0,${height})`)
+    .call(g => g.selectAll('line').attr('stroke', '#3a3a3c').attr('stroke-dasharray', '3,3'))
+    .call(g => g.select('.domain').remove());
+
+  // X axis
+  svg.append('g')
+    .attr('transform', `translate(0,${height})`)
+    .call(d3.axisBottom(x).ticks(5))
+    .call(g => g.select('.domain').attr('stroke', '#3a3a3c'))
+    .call(g => g.selectAll('text').attr('fill', '#8e8e93').attr('font-size', '12px'))
+    .call(g => g.selectAll('.tick line').attr('stroke', '#3a3a3c'));
+
+  // Stems
+  svg.selectAll('.stem')
+    .data(reversed).join('line').attr('class', 'stem')
+    .attr('x1', 0).attr('x2', d => x(d.count))
+    .attr('y1', d => y(d.name) + y.bandwidth() / 2)
+    .attr('y2', d => y(d.name) + y.bandwidth() / 2)
+    .attr('stroke', d => TYPE_COLORS[d.type] || '#8E8E93')
+    .attr('stroke-width', 2).attr('opacity', 0.55);
+
+  // Dots
+  svg.selectAll('.dot')
+    .data(reversed).join('circle').attr('class', 'dot')
+    .attr('cx', d => x(d.count))
+    .attr('cy', d => y(d.name) + y.bandwidth() / 2)
+    .attr('r', 5.5).attr('fill', d => TYPE_COLORS[d.type] || '#8E8E93');
+
+  // Count labels
+  svg.selectAll('.count-lbl')
+    .data(reversed).join('text').attr('class', 'count-lbl')
+    .attr('x', d => x(d.count) + 10)
+    .attr('y', d => y(d.name) + y.bandwidth() / 2 + 4)
+    .attr('font-size', '12px').attr('fill', '#8e8e93')
+    .text(d => d.count);
+
+  // Y labels: emoji + name
+  svg.selectAll('.y-lbl')
+    .data(reversed).join('text').attr('class', 'y-lbl')
+    .attr('x', -10)
+    .attr('y', d => y(d.name) + y.bandwidth() / 2 + 4)
+    .attr('text-anchor', 'end').attr('font-size', '13.5px').attr('fill', '#f2f2f7')
+    .text(d => `${TYPE_EMOJI[d.type] || ''} ${d.name}`);
+}
+
+// ─── Timeline ──────────────────────────────────────────────────────────────────
+
+function renderTimeline(monthCounts, sortedMonths) {
+  const W      = document.getElementById('timeline').getBoundingClientRect().width || 852;
+  const margin = { top: 24, right: 24, bottom: 52, left: 44 };
+  const width  = W - margin.left - margin.right;
+  const height = 240;
+
+  const data = sortedMonths.map(k => {
+    const [m, yr] = k.split(' ');
+    return { key: k, label: `${m.slice(0, 3)} '${yr.slice(2)}`, count: monthCounts[k] };
+  });
+
+  const x = d3.scaleBand().domain(data.map(d => d.key)).range([0, width]).padding(0.05);
+  const y = d3.scaleLinear().domain([0, d3.max(data, d => d.count) * 1.12]).range([height, 0]);
+
+  const svg = d3.select('#timeline').append('svg')
+    .attr('width', W).attr('height', height + margin.top + margin.bottom)
+    .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const cx = d => x(d.key) + x.bandwidth() / 2;
+
+  // Y grid
+  svg.append('g')
+    .call(d3.axisLeft(y).ticks(5).tickSize(-width).tickFormat(''))
+    .call(g => g.select('.domain').remove())
+    .call(g => g.selectAll('line').attr('stroke', '#3a3a3c').attr('stroke-dasharray', '3,3'));
+
+  // Area + line
+  const area = d3.area().x(cx).y0(height).y1(d => y(d.count)).curve(d3.curveCatmullRom);
+  const line = d3.line().x(cx).y(d => y(d.count)).curve(d3.curveCatmullRom);
+
+  svg.append('path').datum(data)
+    .attr('fill', 'rgba(255,159,10,0.10)').attr('d', area);
+  svg.append('path').datum(data)
+    .attr('fill', 'none').attr('stroke', '#FF9F0A').attr('stroke-width', 2).attr('d', line);
+
+  // Dots
+  svg.selectAll('.tdot')
+    .data(data).join('circle').attr('class', 'tdot')
+    .attr('cx', cx).attr('cy', d => y(d.count))
+    .attr('r', 3).attr('fill', '#FF9F0A');
+
+  // Peak annotation
+  const peak = data.reduce((a, b) => b.count > a.count ? b : a);
+  svg.append('line')
+    .attr('x1', cx(peak)).attr('x2', cx(peak))
+    .attr('y1', y(peak.count) - 6).attr('y2', y(peak.count) - 20)
+    .attr('stroke', '#FF9F0A').attr('stroke-width', 1).attr('stroke-dasharray', '3,2');
+  svg.append('text')
+    .attr('x', cx(peak)).attr('y', y(peak.count) - 24)
+    .attr('text-anchor', 'middle').attr('font-size', '11px').attr('fill', '#FF9F0A')
+    .text(`Peak: ${peak.count} — ${peak.label}`);
+
+  // X axis (every other month to avoid crowding)
+  const step = Math.ceil(data.length / 14);
+  svg.append('g')
+    .attr('transform', `translate(0,${height})`)
+    .call(d3.axisBottom(x)
+      .tickValues(data.filter((_, i) => i % step === 0).map(d => d.key))
+      .tickFormat(k => data.find(d => d.key === k)?.label ?? k))
+    .call(g => g.select('.domain').attr('stroke', '#3a3a3c'))
+    .call(g => g.selectAll('text')
+      .attr('fill', '#8e8e93').attr('font-size', '12px')
+      .attr('transform', 'rotate(-40)').attr('text-anchor', 'end').attr('dy', '0.5em'))
+    .call(g => g.selectAll('.tick line').attr('stroke', '#3a3a3c'));
+
+  // Y axis
+  svg.append('g')
+    .call(d3.axisLeft(y).ticks(5))
+    .call(g => g.select('.domain').remove())
+    .call(g => g.selectAll('text').attr('fill', '#8e8e93').attr('font-size', '12px'))
+    .call(g => g.selectAll('.tick line').remove());
+}
+
+// ─── Main ──────────────────────────────────────────────────────────────────────
+
+async function main() {
+  try {
+    const text = await fetch('drink_log.csv').then(r => r.text());
+    const rows = parseCSV(text);
+    inferYears(rows);
+    const data = aggregate(rows);
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display  = 'block';
+
+    renderTreemap();
+    renderPersonIsotype(data.personType, data.sortedPeople);
+    renderTopDrinks(data.topDrinks);
+    renderTimeline(data.monthCounts, data.sortedMonths);
+  } catch (err) {
+    document.getElementById('loading').textContent = 'Failed to load data.';
+    console.error(err);
+  }
+}
+
+main();
+</script>
+</body>
+</html>
