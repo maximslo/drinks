@@ -135,8 +135,10 @@
     .nav-btn:hover { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.75); }
 
     @media (max-width: 600px) {
-      .legend-item { padding: 10px 4px; flex: 1 1 25%; }
+      .legend-bar  { flex-wrap: nowrap; overflow-x: auto; }
+      .legend-item { padding: 8px 6px; flex: 1 1 0; min-width: 0; }
       .legend-lbl  { font-size: 8px; }
+      .legend-sub  { display: none; }
       .nav-btn .nav-label { display: none; }
       .nav-btn { padding: 6px 10px; }
     }
@@ -353,19 +355,20 @@
   const LERP = 0.10
 
   let activeCat = null
-  let tiles  = []
-  let root   = null
+  let tiles     = []
+  let root      = null
 
   // ── Init ──────────────────────────────────────────────────────────
 
   function init() {
+    const merged = mergedData(DRINK_DATA)
+
     // Legend bar
     for (const type of TYPE_ORDER) {
-      const cat = CATS[type]
-      const total = DRINK_DATA.find(d => d.type === type)?.children.reduce((s,c) => s+c.count, 0) ?? 0
-      const labeled = total
-      const full    = labeled + cat.unlabeled
-      const item = document.createElement('div')
+      const cat  = CATS[type]
+      const total = merged.find(d => d.type === type)?.children.reduce((s,c) => s+c.count, 0) ?? 0
+      const full  = total + cat.unlabeled
+      const item  = document.createElement('div')
       item.className = 'legend-item'
       item.dataset.type = type
       item.innerHTML = `
@@ -378,16 +381,15 @@
       legendBar.appendChild(item)
     }
 
-    // Build hierarchy — sort once by base count so topology is stable
+    // ── Animated treemap (all screen sizes) ──────────────────────────
     const legendH = legendBar.getBoundingClientRect().height
-    root = d3.hierarchy({ children: mergedData(DRINK_DATA) })
+    root = d3.hierarchy({ children: merged })
       .sum(d => d.count || 0)
       .sort((a, b) => b.value - a.value)
 
     treemapLayout.size([window.innerWidth, window.innerHeight - legendH])
     treemapLayout(root)
 
-    // Create a div per leaf, keep reference to the D3 leaf node
     tiles = root.leaves().map(leaf => {
       const d    = leaf.data
       const type = leaf.parent.data.type
@@ -451,6 +453,8 @@
 
   function tick() {
     const t0 = performance.now()
+
+    if (!root) { requestAnimationFrame(tick); return }
     const vw = window.innerWidth
     const vh = window.innerHeight - legendBar.getBoundingClientRect().height
 
@@ -480,7 +484,6 @@
     }
 
     // Step 2 — recompute D3 layout with updated weights
-    // resquarify reuses previous row topology → no tile-swapping
     root.sum(d => weightMap[d.name] ?? 0)
     treemapLayout.size([vw, vh])(root)
 
@@ -587,8 +590,23 @@
   let resizeTimer
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer)
+    treemapLayout.tile(d3.treemapSquarify)
     resizeTimer = setTimeout(() => {
+      const vw = window.innerWidth
+      const vh = window.innerHeight - legendBar.getBoundingClientRect().height
       for (const tile of tiles) tile._w = tile.data.count
+      root.sum(d => d.count || 0)
+      // Purge the cached landscape row topology so resquarify re-squarifies fresh
+      root.each(d => { delete d._squarify })
+      treemapLayout.tile(d3.treemapResquarify)
+      treemapLayout.size([vw, vh])(root)
+      // Snap tile reference positions to the new layout
+      for (const tile of tiles) {
+        tile.rx = tile.leaf.x0
+        tile.ry = tile.leaf.y0
+        tile.rw = tile.leaf.x1 - tile.leaf.x0
+        tile.rh = tile.leaf.y1 - tile.leaf.y0
+      }
     }, 150)
   })
 </script>
