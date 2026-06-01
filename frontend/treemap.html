@@ -50,7 +50,7 @@
 
 <header>
   <h1>One Drink At A Time</h1>
-  <p>5,000 drinks — area sized by count, broken down by specific drink.</p>
+  <p>~5,400 drinks — area sized by count, broken down by specific drink.</p>
 </header>
 
 <div id="treemap"></div>
@@ -62,9 +62,9 @@ const TYPE_COLORS = {
   Cocktail: '#aacae8',
   Shot:     '#f0beb9',
   Wine:     '#d2b9e3',
-  Seltzer:  '#a7d6b9',
-  Cider:    '#a6dbdb',
-  Other:    '#f7b9c9',
+  Seltzer:  '#a6dbdb',
+  Cider:    '#a7d6b9',
+  Other:    '#ccc9c4',
 };
 
 const TYPE_EMOJI = {
@@ -72,80 +72,101 @@ const TYPE_EMOJI = {
   Wine: '🍷', Seltzer: '🥤', Cider: '🍎', Other: '🍹',
 };
 
-const TYPE_ORDER = ['Beer', 'Cocktail', 'Shot', 'Wine', 'Seltzer', 'Cider', 'Other'];
+const TYPE_ORDER = ['Beer', 'Cocktail', 'Shot', 'Wine', 'Cider', 'Seltzer', 'Other'];
 
 const DRINK_DATA = [
   { type: 'Beer', children: [
-    { name: 'Corona',         count: 287 },
-    { name: 'Coors Light',    count: 279 },
-    { name: 'Guinness',       count: 168 },
-    { name: 'Bud Light',      count: 148 },
-    { name: 'Modelo',         count: 117 },
-    { name: 'Bapple',         count: 100 },
-    { name: 'Michelob Ultra', count: 89  },
-    { name: 'Kona',           count: 64  },
-    { name: 'Tsingtao',       count: 57  },
-    { name: 'PBR',            count: 42  },
-    { name: 'Miller Lite',    count: 38  },
-    { name: 'Busch',          count: 38  },
-    { name: 'Bintang',        count: 30  },
-    { name: 'Sapporo',        count: 21  },
-    { name: 'Singha',         count: 21  },
-    { name: 'Other',          count: 954, other: true },
+    { name: 'Corona',         count: 286 },
+    { name: 'Coors Light',    count: 277 },
+    { name: 'Guinness',       count: 161 },
+    { name: 'Bud Light',      count: 147 },
+    { name: 'Modelo',         count: 116 },
+    { name: 'Michelob Ultra', count: 108 },
+    { name: 'Bapple',         count: 101 },
+    { name: 'Kona',           count:  64 },
+    { name: 'Tsingtao',       count:  57 },
+    { name: 'PBR',            count:  38 },
+    { name: 'Miller Lite',    count:  38 },
+    { name: 'Busch',          count:  38 },
+    { name: 'Bintang',        count:  30 },
+    { name: 'Sapporo',        count:  21 },
+    { name: 'Singha',         count:  21 },
+    { name: 'Sam Adams',      count:  17 },
+    { name: 'Asahi',          count:  17 },
+    { name: 'Budweiser',      count:  17 },
+    { name: 'Imperial',       count:  16 },
+    { name: 'Other',          count: 864, other: true },
   ]},
   { type: 'Cocktail', children: [
-    { name: 'Margarita',        count: 91  },
-    { name: 'Gin & Tonic',      count: 68  },
-    { name: 'Cutwater',         count: 58  },
-    { name: 'Espresso Martini', count: 42  },
-    { name: 'Vodka Redbull',    count: 29  },
-    { name: 'Rum & Coke',       count: 27  },
-    { name: 'Long Island',      count: 20  },
-    { name: 'Vodka Soda',       count: 20  },
-    { name: 'Moscow Mule',      count: 18  },
-    { name: 'Spritz',           count: 24  },
-    { name: 'Jagerbomb',        count: 13  },
-    { name: 'Mojito',           count: 12  },
-    { name: 'Vodka Cran',       count: 11  },
-    { name: 'Smirnoff Ice',     count: 10  },
-    { name: 'Other',            count: 561, other: true },
+    { name: 'Margarita',        count: 71 },
+    { name: 'Gin & Tonic',      count: 68 },
+    { name: 'Cutwater',         count: 58 },
+    { name: 'Espresso Martini', count: 41 },
+    { name: 'Vodka Redbull',    count: 29 },
+    { name: 'Rum & Coke',       count: 29 },
+    { name: 'Vodka Soda',       count: 20 },
+    { name: 'Long Island',      count: 20 },
+    { name: 'Moscow Mule',      count: 18 },
+    { name: 'Bellini',          count: 18 },
+    { name: 'Aperol Spritz',    count: 13 },
+    { name: 'Jagerbomb',        count: 13 },
+    { name: 'Highball',         count: 12 },
+    { name: 'Mojito',           count: 12 },
+    { name: 'Mai Tai',          count: 11 },
+    { name: 'Mango Margarita',  count: 11 },
+    { name: 'Vodka Cran',       count: 11 },
+    { name: 'Smirnoff Ice',     count: 10 },
+    { name: 'Hugo Spritz',      count: 10 },
+    { name: 'Other',            count: 512, other: true },
   ]},
   { type: 'Shot', children: [
     { name: 'Tequila',    count: 173 },
-    { name: 'Vodka',      count: 76  },
-    { name: 'Whiskey',    count: 74  },
-    { name: 'Fireball',   count: 43  },
-    { name: 'Jello Shot', count: 31  },
-    { name: 'Jäger',      count: 13  },
-    { name: 'Limoncello', count: 10  },
-    { name: 'Green Tea',  count: 10  },
-    { name: 'Bourbon',    count: 7   },
-    { name: 'Gin',        count: 7   },
-    { name: 'Other',      count: 102, other: true },
+    { name: 'Vodka',      count:  75 },
+    { name: 'Whiskey',    count:  59 },
+    { name: 'Fireball',   count:  43 },
+    { name: 'Jello Shot', count:  30 },
+    { name: 'Jäger',      count:  12 },
+    { name: 'Limoncello', count:  10 },
+    { name: 'Green Tea',  count:  10 },
+    { name: 'Bourbon',    count:   7 },
+    { name: 'Gin',        count:   7 },
+    { name: 'Other',      count: 120, other: true },
   ]},
   { type: 'Wine', children: [
-    { name: 'Red Wine',   count: 192 },
-    { name: 'White Wine', count: 174 },
-    { name: 'Sangria',    count: 40  },
-    { name: 'Rosé',       count: 19  },
-    { name: 'Sake',       count: 18  },
-    { name: 'Other',      count: 46,  other: true },
+    { name: 'Red Wine',    count: 177 },
+    { name: 'White Wine',  count: 149 },
+    { name: 'Sangria',     count:  40 },
+    { name: 'Sake',        count:  18 },
+    { name: 'Rosé',        count:  14 },
+    { name: 'Pinot Grigio',count:   6 },
+    { name: 'Prosecco',    count:  13 },
+    { name: 'Chardonnay',  count:   5 },
+    { name: 'Other',       count:  59, other: true },
+  ]},
+  { type: 'Cider', children: [
+    { name: 'Downeast',        count: 194 },
+    { name: 'Bold Rock',       count:  42 },
+    { name: 'Angry Orchard',   count:  27 },
+    { name: 'Somersby',        count:   9 },
+    { name: 'Apple Cider',     count:   6 },
+    { name: 'Blueberry Cider', count:   5 },
+    { name: 'Magners',         count:   4 },
+    { name: 'Other',           count:  23, other: true },
   ]},
   { type: 'Seltzer', children: [
-    { name: 'Downeast',      count: 189 },
-    { name: 'Strong Zero',   count: 44  },
-    { name: 'High Noon',     count: 30  },
-    { name: 'Angry Orchard', count: 25  },
-    { name: 'Bold Rock',     count: 21  },
-    { name: 'Somersby',      count: 9   },
-    { name: 'Other',         count: 82,  other: true },
+    { name: 'High Noon',  count: 31 },
+    { name: 'Nutrl',      count:  5 },
+    { name: 'White Claw', count:  4 },
+    { name: 'Other',      count: 34, other: true },
   ]},
   { type: 'Other', children: [
     { name: 'Soju',        count: 60 },
-    { name: 'Twisted Tea', count: 10 },
+    { name: 'Strong Zero', count: 46 },
+    { name: 'Sun Cruiser', count: 17 },
+    { name: 'Twisted Tea', count: 16 },
+    { name: 'Surfside',    count:  6 },
     { name: 'Other',       count: 17, other: true },
   ]},
-  { type: 'Cider', children: [{ name: 'Cider', count: 21 }] },
 ];
 
 function wrapText(el, str, maxW, lineH) {
@@ -170,11 +191,28 @@ function wrapText(el, str, maxW, lineH) {
   return lines;
 }
 
+const MERGE_INTO = {
+  'Pinot Grigio': 'White Wine',
+  'Chardonnay':   'White Wine',
+};
+
+function mergedData(data) {
+  return data.map(cat => {
+    const map = {};
+    for (const child of cat.children) {
+      const target = MERGE_INTO[child.name] ?? child.name;
+      if (map[target]) map[target] = { ...map[target], count: map[target].count + child.count };
+      else map[target] = { ...child, name: target };
+    }
+    return { ...cat, children: Object.values(map) };
+  });
+}
+
 function render() {
   const W = document.getElementById('treemap').getBoundingClientRect().width || 852;
   const H = 560;
 
-  const root = d3.hierarchy({ children: DRINK_DATA })
+  const root = d3.hierarchy({ children: mergedData(DRINK_DATA) })
     .sum(d => (!d.other && d.count) ? d.count : 0)
     .sort((a, b) => b.value - a.value);
 
@@ -240,7 +278,7 @@ function render() {
     if (countY + nameSz * 0.9 < y + h - P) {
       svg.append('text')
         .attr('x', x + P).attr('y', countY)
-        .attr('font-size', `${Math.min(11, Math.max(8, nameSz * 0.85))}px`)
+        .attr('font-size', `${Math.min(11, Math.max(8, nameSz * 0.99))}px`)
         .attr('fill', mutedColor)
         .attr('font-family', "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif")
         .text(leaf.data.count.toLocaleString());

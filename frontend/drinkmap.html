@@ -49,6 +49,20 @@
       opacity: 0.5;
     }
 
+    .tile-img {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 256px;
+      height: 256px;
+      object-fit: contain;
+      opacity: 0.85;
+      pointer-events: none;
+      user-select: none;
+      /* scale(0) hides without display:none — keeps the rasterized bitmap cached */
+      transform: translate(-50%, -50%) scale(0);
+    }
+
     /* Legend */
     .legend-bar {
       position: fixed;
@@ -151,88 +165,172 @@
   // ── Colors ────────────────────────────────────────────────────────
 
   const CATS = {
-    Beer:     { bg: '#f3d2a1', bgHover: '#e5b96a', fg: 'rgba(0,0,0,0.65)', accent: '#c87820', unlabeled: 954 },
-    Cocktail: { bg: '#aacae8', bgHover: '#76aede', fg: 'rgba(0,0,0,0.65)', accent: '#2e72b8', unlabeled: 561 },
-    Shot:     { bg: '#f0beb9', bgHover: '#e28278', fg: 'rgba(0,0,0,0.65)', accent: '#c04040', unlabeled: 102 },
-    Wine:     { bg: '#d2b9e3', bgHover: '#b88ed4', fg: 'rgba(0,0,0,0.65)', accent: '#8040b8', unlabeled:  46 },
-    Seltzer:  { bg: '#a7d6b9', bgHover: '#72c090', fg: 'rgba(0,0,0,0.65)', accent: '#2ea060', unlabeled:  82 },
-    Cider:    { bg: '#a6dbdb', bgHover: '#72bebe', fg: 'rgba(0,0,0,0.65)', accent: '#288888', unlabeled:   0 },
+    Beer:     { bg: '#f3d2a1', bgHover: '#e5b96a', fg: 'rgba(0,0,0,0.65)', accent: '#c87820', unlabeled: 864 },
+    Cocktail: { bg: '#aacae8', bgHover: '#76aede', fg: 'rgba(0,0,0,0.65)', accent: '#2e72b8', unlabeled: 512 },
+    Shot:     { bg: '#f0beb9', bgHover: '#e28278', fg: 'rgba(0,0,0,0.65)', accent: '#c04040', unlabeled: 120 },
+    Wine:     { bg: '#d2b9e3', bgHover: '#b88ed4', fg: 'rgba(0,0,0,0.65)', accent: '#8040b8', unlabeled:  59 },
+    Cider:    { bg: '#a7d6b9', bgHover: '#72c090', fg: 'rgba(0,0,0,0.65)', accent: '#2ea060', unlabeled:  23 },
+    Seltzer:  { bg: '#a6dbdb', bgHover: '#72bebe', fg: 'rgba(0,0,0,0.65)', accent: '#288888', unlabeled:  34 },
     Other:    { bg: '#ccc9c4', bgHover: '#aea9a4', fg: 'rgba(0,0,0,0.65)', accent: '#6a6560', unlabeled:  17 },
   }
 
-  const TYPE_ORDER = ['Beer', 'Cocktail', 'Shot', 'Wine', 'Seltzer', 'Cider', 'Other']
+  const TYPE_ORDER = ['Beer', 'Cocktail', 'Shot', 'Wine', 'Cider', 'Seltzer', 'Other']
+
+  // ── Drink icons (Twemoji SVG — proper scalable images, no API key) ──
+  // Each value is the Unicode codepoint hex that Twemoji uses as filename.
+  // CDN: https://abs.twimg.com/emoji/v2/svg/<hex>.svg
+
+  const OPENMOJI = 'https://cdn.jsdelivr.net/npm/openmoji@15.0.0/color/svg/'
+
+  // Local icons override OpenMoji — drop any SVG into frontend/icons/<name>.svg
+  const LOCAL_ICONS = {}
+
+  const DRINK_ICON = {
+    // Beer
+    'Corona': '1f37a', 'Coors Light': '1f37a', 'Guinness': '1f37a',
+    'Bud Light': '1f37a', 'Modelo': '1f37a', 'Bapple': '1f37a',
+    'Michelob Ultra': '1f37a', 'Kona': '1f30a', 'Tsingtao': '1f37a',
+    'PBR': '1f37a', 'Miller Lite': '1f37a', 'Busch': '1f37a',
+    'Bintang': '1f334', 'Sapporo': '1f376', 'Singha': '1f405',
+    'Sam Adams': '1f37a', 'Asahi': '1f37a', 'Budweiser': '1f37a', 'Imperial': '1f37a',
+    // Cocktail
+    'Margarita': '1f379', 'Gin & Tonic': '1f378', 'Cutwater': '1f964',
+    'Espresso Martini': '2615', 'Vodka Redbull': '26a1', 'Rum & Coke': '1f943',
+    'Long Island': '1f379', 'Vodka Soda': '1f964',
+    'Moscow Mule': '1f37a', 'Jagerbomb': '1f4a3', 'Mojito': '1f33f',
+    'Vodka Cran': '1f352', 'Smirnoff Ice': '1f9ca',
+    'Sun Cruiser': '2600', 'Aperol Spritz': '1f37e', 'Hugo Spritz': '1f37e',
+    'Mai Tai': '1f379', 'Mango Margarita': '1f96d', 'Highball': '1f964', 'Bellini': '1f37e',
+    // Shot
+    'Tequila': '1f943', 'Vodka': '1f943', 'Whiskey': '1f943',
+    'Fireball': '1f525', 'Jello Shot': '1f36e', 'Jäger': '1f98c',
+    'Limoncello': '1f34b', 'Green Tea': '1f375', 'Bourbon': '1f943', 'Gin': '1f33f',
+    // Wine
+    'Red Wine': '1f377', 'White Wine': '1f942', 'Sangria': '1f377',
+    'Rosé': '1f338', 'Sake': '1f376',
+    'Bellini': '1f37e', 'Pinot Grigio': '1f377', 'Prosecco': '1f37e', 'Chardonnay': '1f377',
+    // Cider
+    'Downeast': '1f34e', 'Bold Rock': '1faa8', 'Angry Orchard': '1f34e',
+    'Somersby': '1f34f', 'Apple Cider': '1f34e', 'Blueberry Cider': '1fad0', 'Magner': '1f34f',
+    // Seltzer
+    'High Noon': '1f31e', 'Nutrl': '1f9ca', 'White Claw': '1f9ca',
+    'Truly': '1f9ca', 'Topo Chico': '1f9ca',
+    // Other
+    'Soju': '1f376', 'Strong Zero': '26a1', 'Twisted Tea': '1f375', 'Surfside': '1f3d6',
+  }
+
+  function iconSrc(name) {
+    if (LOCAL_ICONS[name]) return LOCAL_ICONS[name]
+    return OPENMOJI + (DRINK_ICON[name] ?? '1F379').toUpperCase() + '.svg'
+  }
 
   // ── Data (named drinks only — unlabeled totals shown in legend) ───
 
   const DRINK_DATA = [
     { type: 'Beer', children: [
-      { name: 'Corona',         count: 287 },
-      { name: 'Coors Light',    count: 279 },
-      { name: 'Guinness',       count: 168 },
-      { name: 'Bud Light',      count: 148 },
-      { name: 'Modelo',         count: 117 },
-      { name: 'Bapple',         count: 100 },
-      { name: 'Michelob Ultra', count:  89 },
+      { name: 'Corona',         count: 286 },
+      { name: 'Coors Light',    count: 277 },
+      { name: 'Guinness',       count: 161 },
+      { name: 'Bud Light',      count: 147 },
+      { name: 'Modelo',         count: 116 },
+      { name: 'Michelob Ultra', count: 108 },
+      { name: 'Bapple',         count: 101 },
       { name: 'Kona',           count:  64 },
       { name: 'Tsingtao',       count:  57 },
-      { name: 'PBR',            count:  42 },
+      { name: 'PBR',            count:  38 },
       { name: 'Miller Lite',    count:  38 },
       { name: 'Busch',          count:  38 },
       { name: 'Bintang',        count:  30 },
       { name: 'Sapporo',        count:  21 },
       { name: 'Singha',         count:  21 },
+      { name: 'Sam Adams',      count:  17 },
+      { name: 'Asahi',          count:  17 },
+      { name: 'Budweiser',      count:  17 },
+      { name: 'Imperial',       count:  16 },
     ]},
     { type: 'Cocktail', children: [
-      { name: 'Margarita',        count: 91 },
+      { name: 'Margarita',        count: 71 },
       { name: 'Gin & Tonic',      count: 68 },
       { name: 'Cutwater',         count: 58 },
-      { name: 'Espresso Martini', count: 42 },
+      { name: 'Espresso Martini', count: 41 },
       { name: 'Vodka Redbull',    count: 29 },
-      { name: 'Rum & Coke',       count: 27 },
-      { name: 'Spritz',           count: 24 },
-      { name: 'Long Island',      count: 20 },
+      { name: 'Rum & Coke',       count: 29 },
       { name: 'Vodka Soda',       count: 20 },
+      { name: 'Long Island',      count: 20 },
       { name: 'Moscow Mule',      count: 18 },
+      { name: 'Bellini',          count: 18 },
+      { name: 'Aperol Spritz',    count: 13 },
       { name: 'Jagerbomb',        count: 13 },
+      { name: 'Highball',         count: 12 },
       { name: 'Mojito',           count: 12 },
+      { name: 'Mai Tai',          count: 11 },
+      { name: 'Mango Margarita',  count: 11 },
       { name: 'Vodka Cran',       count: 11 },
       { name: 'Smirnoff Ice',     count: 10 },
+      { name: 'Hugo Spritz',      count: 10 },
     ]},
     { type: 'Shot', children: [
       { name: 'Tequila',    count: 173 },
-      { name: 'Vodka',      count:  76 },
-      { name: 'Whiskey',    count:  74 },
+      { name: 'Vodka',      count:  75 },
+      { name: 'Whiskey',    count:  59 },
       { name: 'Fireball',   count:  43 },
-      { name: 'Jello Shot', count:  31 },
-      { name: 'Jäger',      count:  13 },
+      { name: 'Jello Shot', count:  30 },
+      { name: 'Jäger',      count:  12 },
       { name: 'Limoncello', count:  10 },
       { name: 'Green Tea',  count:  10 },
       { name: 'Bourbon',    count:   7 },
       { name: 'Gin',        count:   7 },
     ]},
     { type: 'Wine', children: [
-      { name: 'Red Wine',   count: 192 },
-      { name: 'White Wine', count: 174 },
-      { name: 'Sangria',    count:  40 },
-      { name: 'Rosé',       count:  19 },
-      { name: 'Sake',       count:  18 },
+      { name: 'Red Wine',    count: 177 },
+      { name: 'White Wine',  count: 149 },
+      { name: 'Sangria',     count:  40 },
+      { name: 'Sake',        count:  18 },
+      { name: 'Rosé',        count:  14 },
+      { name: 'Pinot Grigio',count:   6 },
+      { name: 'Prosecco',    count:  13 },
+      { name: 'Chardonnay',  count:   5 },
+    ]},
+    { type: 'Cider', children: [
+      { name: 'Downeast',        count: 194 },
+      { name: 'Bold Rock',       count:  42 },
+      { name: 'Angry Orchard',   count:  27 },
+      { name: 'Somersby',        count:   9 },
+      { name: 'Apple Cider',     count:   6 },
+      { name: 'Blueberry Cider', count:   5 },
+      { name: 'Magners',         count:   4 },
     ]},
     { type: 'Seltzer', children: [
-      { name: 'Downeast',      count: 189 },
-      { name: 'Strong Zero',   count:  44 },
-      { name: 'High Noon',     count:  30 },
-      { name: 'Angry Orchard', count:  25 },
-      { name: 'Bold Rock',     count:  21 },
-      { name: 'Somersby',      count:   9 },
+      { name: 'High Noon',  count: 31 },
+      { name: 'Nutrl',      count:  5 },
+      { name: 'White Claw', count:  4 },
     ]},
     { type: 'Other', children: [
       { name: 'Soju',        count: 60 },
-      { name: 'Twisted Tea', count: 10 },
-    ]},
-    { type: 'Cider', children: [
-      { name: 'Cider', count: 21 },
+      { name: 'Strong Zero', count: 46 },
+      { name: 'Sun Cruiser', count: 17 },
+      { name: 'Twisted Tea', count: 16 },
+      { name: 'Surfside',    count:  6 },
     ]},
   ]
+
+  // ── Merge rules (display-only, DRINK_DATA unchanged) ─────────────
+  const MERGE_INTO = {
+    'Pinot Grigio': 'White Wine',
+    'Chardonnay':   'White Wine',
+  }
+
+  function mergedData(data) {
+    return data.map(cat => {
+      const map = {}
+      for (const child of cat.children) {
+        const target = MERGE_INTO[child.name] ?? child.name
+        if (map[target]) map[target] = { ...map[target], count: map[target].count + child.count }
+        else map[target] = { ...child, name: target }
+      }
+      return { ...cat, children: Object.values(map) }
+    })
+  }
 
   // ── D3 Treemap ────────────────────────────────────────────────────
   // treemapResquarify preserves topology between frames — tiles never
@@ -282,7 +380,7 @@
 
     // Build hierarchy — sort once by base count so topology is stable
     const legendH = legendBar.getBoundingClientRect().height
-    root = d3.hierarchy({ children: DRINK_DATA })
+    root = d3.hierarchy({ children: mergedData(DRINK_DATA) })
       .sum(d => d.count || 0)
       .sort((a, b) => b.value - a.value)
 
@@ -301,7 +399,8 @@
       el.style.backgroundColor = cat.bg
       el.innerHTML = `
         <div class="tile-name"  style="color:${cat.fg}">${d.name}</div>
-        <div class="tile-count" style="color:${cat.fg}">${d.count.toLocaleString()}</div>`
+        <div class="tile-count" style="color:${cat.fg}">${d.count.toLocaleString()}</div>
+        <img class="tile-img" src="${iconSrc(d.name)}" decoding="async" loading="lazy">`
       treemapEl.appendChild(el)
 
       const x = leaf.x0, y = leaf.y0
@@ -430,27 +529,41 @@
       // Text tier based on rendered area
       const area = rw * rh
       let tier = 0
-      if      (area >= 16000) tier = 3
-      else if (area >=  4500) tier = 2
-      else if (area >=   700) tier = 1
+      if      (area >= 10000) tier = 3
+      else if (area >=  2000) tier = 2
+      else if (area >=   500) tier = 1
 
       if (tile._tier !== tier || tier === 3) {
-        const nameEl  = tile.el.querySelector('.tile-name')
-        const countEl = tile.el.querySelector('.tile-count')
+        if (!tile._els) {
+          tile._els = {
+            name:  tile.el.querySelector('.tile-name'),
+            count: tile.el.querySelector('.tile-count'),
+            img:   tile.el.querySelector('.tile-img'),
+          }
+        }
+        const { name: nameEl, count: countEl, img: imgEl } = tile._els
+
+        // scale() resizes the pre-rasterized bitmap — no SVG re-render each frame
+        const imgSz   = Math.max(16, Math.min(rw, rh) * 0.5)
+        const imgScale = (imgSz / 256).toFixed(3)
 
         if (tier === 0) {
           nameEl.style.display = 'none'; countEl.style.display = 'none'
+          imgEl.style.transform = 'translate(-50%,-50%) scale(0)'
         } else if (tier === 1) {
           nameEl.style.display = ''; nameEl.style.fontSize = '7px'
-          countEl.style.display = 'none'
+          countEl.style.display = ''; countEl.style.fontSize = '6px'
+          imgEl.style.transform = 'translate(-50%,-50%) scale(0)'
         } else if (tier === 2) {
           const sz = Math.min(12, 9 + (area - 4500) / 5000)
           nameEl.style.display = ''; nameEl.style.fontSize = sz + 'px'
-          countEl.style.display = ''; countEl.style.fontSize = (sz - 2) + 'px'
+          countEl.style.display = ''; countEl.style.fontSize = sz + 'px'
+          // imgEl.style.transform = `translate(-50%,-50%) scale(${imgScale})`
         } else {
           const sz = Math.min(14, 11 + area / 25000)
           nameEl.style.display = ''; nameEl.style.fontSize = sz + 'px'
-          countEl.style.display = ''; countEl.style.fontSize = (sz - 1) + 'px'
+          countEl.style.display = ''; countEl.style.fontSize = sz + 'px'
+          // imgEl.style.transform = `translate(-50%,-50%) scale(${imgScale})`
         }
         tile._tier = tier
       }
