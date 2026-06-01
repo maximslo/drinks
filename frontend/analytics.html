@@ -234,6 +234,31 @@ function aggregate(rows) {
   return { typeBreakdown, topDrinks, personType, monthCounts, sortedMonths, sortedPeople };
 }
 
+// ─── SVG text wrap helper ──────────────────────────────────────────────────────
+
+function wrapText(el, str, maxW, lineH) {
+  el.text(null);
+  const words  = str.split(/\s+/);
+  const x      = el.attr('x');
+  let line     = '';
+  let lines    = 1;
+  let tspan    = el.append('tspan').attr('x', x);
+
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    tspan.text(test);
+    if (tspan.node().getComputedTextLength() > maxW && line) {
+      tspan.text(line);
+      line  = word;
+      lines++;
+      tspan = el.append('tspan').attr('x', x).attr('dy', lineH).text(word);
+    } else {
+      line = test;
+    }
+  }
+  return lines;
+}
+
 // ─── Treemap ───────────────────────────────────────────────────────────────────
 
 const DRINK_DATA = [
@@ -368,19 +393,22 @@ function renderTreemap() {
 
     if (w < 28 || h < 16) return;
 
-    const P       = 5;
-    const nameSz  = Math.min(13, Math.max(9, w * 0.13));
-    const hasCount = h > nameSz * 2 + P * 3;
+    const P      = 5;
+    const nameSz = Math.min(13, Math.max(9, w * 0.13));
+    const lineH  = nameSz + 2;
 
-    svg.append('text')
+    const nameEl = svg.append('text')
       .attr('x', x + P).attr('y', y + P + nameSz)
       .attr('font-size', `${nameSz}px`).attr('font-weight', '600').attr('fill', '#fff')
-      .attr('font-family', "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif")
-      .text(leaf.data.name);
+      .attr('font-family', "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif");
 
-    if (hasCount) {
+    const lines    = wrapText(nameEl, leaf.data.name, w - P * 2, lineH);
+    const nameBase = y + P + nameSz + (lines - 1) * lineH;
+    const countY   = nameBase + lineH * 0.8;
+
+    if (countY + nameSz * 0.9 < y + h - P) {
       svg.append('text')
-        .attr('x', x + P).attr('y', y + P + nameSz * 2 + 2)
+        .attr('x', x + P).attr('y', countY)
         .attr('font-size', `${Math.min(11, Math.max(8, nameSz * 0.85))}px`)
         .attr('fill', 'rgba(255,255,255,0.65)')
         .attr('font-family', "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif")

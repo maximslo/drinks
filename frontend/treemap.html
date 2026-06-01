@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>One Drink At A Time</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1c1c1e;
+      color: #f2f2f7;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 48px 24px 64px;
+    }
+
+    header { margin-bottom: 32px; }
+    header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+    header p  { font-size: 14px; color: #8e8e93; margin-top: 6px; }
+
+    #legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px 22px;
+      margin-top: 14px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #f2f2f7;
+    }
+
+    .legend-swatch {
+      width: 11px;
+      height: 11px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    .legend-muted { color: #8e8e93; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>One Drink At A Time</h1>
+  <p>5,000 drinks — area sized by count, broken down by specific drink.</p>
+</header>
+
+<div id="treemap"></div>
+<div id="legend"></div>
+
+<script>
+const TYPE_COLORS = {
+  Beer:     '#f3d2a1',
+  Cocktail: '#aacae8',
+  Shot:     '#f0beb9',
+  Wine:     '#d2b9e3',
+  Seltzer:  '#a7d6b9',
+  Cider:    '#a6dbdb',
+  Other:    '#f7b9c9',
+};
+
+const TYPE_EMOJI = {
+  Beer: '🍺', Cocktail: '🍸', Shot: '🥃',
+  Wine: '🍷', Seltzer: '🥤', Cider: '🍎', Other: '🍹',
+};
+
+const TYPE_ORDER = ['Beer', 'Cocktail', 'Shot', 'Wine', 'Seltzer', 'Cider', 'Other'];
+
+const DRINK_DATA = [
+  { type: 'Beer', children: [
+    { name: 'Corona',         count: 287 },
+    { name: 'Coors Light',    count: 279 },
+    { name: 'Guinness',       count: 168 },
+    { name: 'Bud Light',      count: 148 },
+    { name: 'Modelo',         count: 117 },
+    { name: 'Bapple',         count: 100 },
+    { name: 'Michelob Ultra', count: 89  },
+    { name: 'Kona',           count: 64  },
+    { name: 'Tsingtao',       count: 57  },
+    { name: 'PBR',            count: 42  },
+    { name: 'Miller Lite',    count: 38  },
+    { name: 'Busch',          count: 38  },
+    { name: 'Bintang',        count: 30  },
+    { name: 'Sapporo',        count: 21  },
+    { name: 'Singha',         count: 21  },
+    { name: 'Other',          count: 954, other: true },
+  ]},
+  { type: 'Cocktail', children: [
+    { name: 'Margarita',        count: 91  },
+    { name: 'Gin & Tonic',      count: 68  },
+    { name: 'Cutwater',         count: 58  },
+    { name: 'Espresso Martini', count: 42  },
+    { name: 'Vodka Redbull',    count: 29  },
+    { name: 'Rum & Coke',       count: 27  },
+    { name: 'Long Island',      count: 20  },
+    { name: 'Vodka Soda',       count: 20  },
+    { name: 'Moscow Mule',      count: 18  },
+    { name: 'Spritz',           count: 24  },
+    { name: 'Jagerbomb',        count: 13  },
+    { name: 'Mojito',           count: 12  },
+    { name: 'Vodka Cran',       count: 11  },
+    { name: 'Smirnoff Ice',     count: 10  },
+    { name: 'Other',            count: 561, other: true },
+  ]},
+  { type: 'Shot', children: [
+    { name: 'Tequila',    count: 173 },
+    { name: 'Vodka',      count: 76  },
+    { name: 'Whiskey',    count: 74  },
+    { name: 'Fireball',   count: 43  },
+    { name: 'Jello Shot', count: 31  },
+    { name: 'Jäger',      count: 13  },
+    { name: 'Limoncello', count: 10  },
+    { name: 'Green Tea',  count: 10  },
+    { name: 'Bourbon',    count: 7   },
+    { name: 'Gin',        count: 7   },
+    { name: 'Other',      count: 102, other: true },
+  ]},
+  { type: 'Wine', children: [
+    { name: 'Red Wine',   count: 192 },
+    { name: 'White Wine', count: 174 },
+    { name: 'Sangria',    count: 40  },
+    { name: 'Rosé',       count: 19  },
+    { name: 'Sake',       count: 18  },
+    { name: 'Other',      count: 46,  other: true },
+  ]},
+  { type: 'Seltzer', children: [
+    { name: 'Downeast',      count: 189 },
+    { name: 'Strong Zero',   count: 44  },
+    { name: 'High Noon',     count: 30  },
+    { name: 'Angry Orchard', count: 25  },
+    { name: 'Bold Rock',     count: 21  },
+    { name: 'Somersby',      count: 9   },
+    { name: 'Other',         count: 82,  other: true },
+  ]},
+  { type: 'Other', children: [
+    { name: 'Soju',        count: 60 },
+    { name: 'Twisted Tea', count: 10 },
+    { name: 'Other',       count: 17, other: true },
+  ]},
+  { type: 'Cider', children: [{ name: 'Cider', count: 21 }] },
+];
+
+function wrapText(el, str, maxW, lineH) {
+  el.text(null);
+  const words = str.split(/\s+/);
+  const x     = el.attr('x');
+  let line    = '', lines = 1;
+  let tspan   = el.append('tspan').attr('x', x);
+
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    tspan.text(test);
+    if (tspan.node().getComputedTextLength() > maxW && line) {
+      tspan.text(line);
+      line  = word;
+      lines++;
+      tspan = el.append('tspan').attr('x', x).attr('dy', lineH).text(word);
+    } else {
+      line = test;
+    }
+  }
+  return lines;
+}
+
+function render() {
+  const W = document.getElementById('treemap').getBoundingClientRect().width || 852;
+  const H = 560;
+
+  const root = d3.hierarchy({ children: DRINK_DATA })
+    .sum(d => (!d.other && d.count) ? d.count : 0)
+    .sort((a, b) => b.value - a.value);
+
+  d3.treemap()
+    .size([W, H])
+    .tile(d3.treemapSquarify)
+    .paddingInner(d => d.depth === 1 ? 3 : 2)
+    .paddingOuter(3)
+    .round(true)(root);
+
+  const svg = d3.select('#treemap').append('svg').attr('width', W).attr('height', H);
+
+  // ── Legend ──
+  const legend = document.getElementById('legend');
+  root.children.sort((a, b) => b.value - a.value).forEach(group => {
+    const type      = group.data.type;
+    const unlabeled = group.data.children?.find(c => c.other)?.count ?? 0;
+    const total     = group.value + unlabeled;
+    const item      = document.createElement('div');
+    item.className  = 'legend-item';
+    item.innerHTML  = `
+      <span class="legend-swatch" style="background:${TYPE_COLORS[type]}"></span>
+      <span style="font-weight:600">${type}</span>
+      <span class="legend-muted">${total.toLocaleString()}${unlabeled ? ` <span style="font-size:11px">(+${unlabeled.toLocaleString()} unlabeled)</span>` : ''}</span>`;
+    legend.appendChild(item);
+  });
+
+  // ── Leaf cells ──
+  root.leaves().forEach(leaf => {
+    if (leaf.data.other) return;
+
+    const type  = leaf.parent.data.type;
+    const color = TYPE_COLORS[type];
+    const x = leaf.x0, y = leaf.y0;
+    const w = leaf.x1 - leaf.x0, h = leaf.y1 - leaf.y0;
+
+    if (w < 2 || h < 2) return;
+
+    // Decide text color based on lightness of the pastel
+    const textColor = 'rgba(0,0,0,0.65)';
+    const mutedColor = 'rgba(0,0,0,0.38)';
+
+    svg.append('rect')
+      .attr('x', x).attr('y', y).attr('width', w).attr('height', h)
+      .attr('rx', 3).attr('fill', color);
+
+    if (w < 28 || h < 16) return;
+
+    const P      = 5;
+    const nameSz = Math.min(13, Math.max(9, w * 0.13));
+    const lineH  = nameSz + 2;
+
+    const nameEl = svg.append('text')
+      .attr('x', x + P).attr('y', y + P + nameSz)
+      .attr('font-size', `${nameSz}px`).attr('font-weight', '600')
+      .attr('fill', textColor)
+      .attr('font-family', "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif");
+
+    const lines    = wrapText(nameEl, leaf.data.name, w - P * 2, lineH);
+    const nameBase = y + P + nameSz + (lines - 1) * lineH;
+    const countY   = nameBase + lineH * 0.8;
+
+    if (countY + nameSz * 0.9 < y + h - P) {
+      svg.append('text')
+        .attr('x', x + P).attr('y', countY)
+        .attr('font-size', `${Math.min(11, Math.max(8, nameSz * 0.85))}px`)
+        .attr('fill', mutedColor)
+        .attr('font-family', "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif")
+        .text(leaf.data.count.toLocaleString());
+    }
+  });
+}
+
+render();
+</script>
+</body>
+</html>
