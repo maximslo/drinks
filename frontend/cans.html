@@ -189,7 +189,21 @@
       margin-top: 28px;
     }
 
-    .person-card  { min-width: 0; }
+    .person-card  {
+      min-width: 0;
+      transform: translateZ(0);
+      will-change: transform;
+    }
+
+    .person-avatar {
+      width: 96px;
+      height: 96px;
+      object-fit: cover;
+      object-position: top center;
+      display: block;
+      margin-bottom: 8px;
+      filter: grayscale(100%) contrast(1.05);
+    }
 
     .person-name {
       font-size: 14px;
@@ -757,6 +771,11 @@ function renderCans() {
     const card = document.createElement('div')
     card.className = 'person-card'
 
+    const avatar = document.createElement('img')
+    avatar.className = 'person-avatar'
+    avatar.src = `avatars/${person.name.toLowerCase()}_.png`
+    avatar.alt = person.name
+
     const nameDiv = document.createElement('div')
     nameDiv.className = 'person-name'
     nameDiv.textContent = person.name
@@ -797,6 +816,7 @@ function renderCans() {
       }
     })
 
+    card.appendChild(avatar)
     card.appendChild(nameDiv)
     card.appendChild(specialtyDiv)
     card.appendChild(totalDiv)
