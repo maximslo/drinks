@@ -992,10 +992,11 @@ function renderBump() {
   const nPeople = BUMP_PEOPLE.length
 
   const container = document.getElementById('bump-chart')
-  const AV_R = 18
-  const margin = { top: 16, right: 164, bottom: 50, left: 50 }
+  const margin = { top: 16, right: 168, bottom: 50, left: 50 }
   const W = Math.min(900, container.getBoundingClientRect().width || 900) - margin.left - margin.right
   const H = 560
+  const slotH = H / (BUMP_PEOPLE.length - 1)  // ~50.9px per slot
+  const AV_R  = Math.floor(slotH / 2) - 1    // avatar half-size fills the slot
 
   const xSc = d3.scaleLinear([0, nWeeks - 1], [0, W])
   const ySc = d3.scaleLinear([0, d3.max(weeks[nWeeks - 1].c)], [H, 0]).nice()
@@ -1095,19 +1096,27 @@ function renderBump() {
       .on('mouseenter', () => highlight(name))
       .on('mouseleave', unhighlight)
 
+    // Full-slot transparent hit area — contiguous with adjacent cards, no dead zone
+    avatarG.append('rect')
+      .attr('x', -AV_R)
+      .attr('y', -slotH / 2)
+      .attr('width', AV_R * 2 + 72)
+      .attr('height', slotH)
+      .attr('fill', 'transparent')
+
     avatarG.append('image')
       .attr('class', 'avatar-img')
       .attr('href', `avatars/${name.toLowerCase()}_.png`)
       .attr('x', -AV_R).attr('y', -AV_R)
       .attr('width', AV_R * 2).attr('height', AV_R * 2)
-      .attr('preserveAspectRatio', 'xMidYMid meet')
+      .attr('preserveAspectRatio', 'xMidYMid slice')
 
     avatarG.append('text')
       .attr('x', AV_R + 6)
       .attr('y', 0)
       .attr('dominant-baseline', 'middle')
       .attr('fill', personColor(name))
-      .style('font-size', '11px')
+      .style('font-size', '12px')
       .style('font-weight', '600')
       .text(name)
   })
