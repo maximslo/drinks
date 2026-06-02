@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>One Drink At A Time</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1c1c1e;
+      color: #f2f2f7;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ════════════════════════════ TREEMAP SECTION ════════════════════════════ */
+
+    #treemap-section {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+      cursor: crosshair;
+    }
+
+    #treemap {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+    }
+
+    .tile {
+      position: absolute;
+      left: 0; top: 0;
+      overflow: hidden;
+      padding: 5px 6px;
+      border-radius: 3px;
+      will-change: transform;
+      contain: layout style paint;
+    }
+
+    .tile-name {
+      font-weight: 600;
+      font-size: 9px;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tile-count {
+      font-weight: 400;
+      font-size: 8px;
+      line-height: 1.3;
+      margin-top: 1px;
+      opacity: 0.5;
+    }
+
+    .tile-img {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 256px; height: 256px;
+      object-fit: contain;
+      opacity: 0.85;
+      pointer-events: none;
+      user-select: none;
+      transform: translate(-50%, -50%) scale(0);
+    }
+
+    /* Legend */
+    .legend-bar {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      z-index: 20;
+      display: flex;
+      flex-wrap: wrap;
+      background: rgba(28,28,30,0.97);
+      border-top: 1px solid rgba(255,255,255,0.07);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      font-size: 10px;
+      font-weight: 500;
+      color: rgba(255,255,255,0.32);
+      cursor: pointer;
+      user-select: none;
+      padding: 8px 10px;
+      flex: 1 1 auto;
+      min-width: 0;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .legend-item:hover  { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.65); }
+    .legend-item.active { color: rgba(255,255,255,0.9); background: rgba(255,255,255,0.08); }
+
+    .legend-dot  { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+    .legend-lbl  { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .legend-sub  { opacity: 0.4; font-size: 9px; }
+
+    /* HUD */
+    .hud {
+      position: absolute;
+      top: 14px; right: 14px;
+      z-index: 20;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 10px;
+      line-height: 1.7;
+      color: rgba(255,255,255,0.13);
+      text-align: right;
+      pointer-events: none;
+    }
+    .hud-val { color: rgba(255,255,255,0.28); font-weight: 600; }
+
+    /* Scroll hint */
+    .scroll-hint {
+      position: absolute;
+      bottom: 48px; left: 0; right: 0;
+      z-index: 15;
+      text-align: center;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      color: rgba(255,255,255,0.18);
+      pointer-events: none;
+      animation: hintpulse 3s ease-in-out infinite;
+    }
+    @keyframes hintpulse {
+      0%, 100% { opacity: 0.4; transform: translateY(0); }
+      50%       { opacity: 1;   transform: translateY(3px); }
+    }
+
+    @media (max-width: 600px) {
+      .legend-bar  { flex-wrap: nowrap; overflow-x: auto; }
+      .legend-item { padding: 8px 6px; flex: 1 1 0; min-width: 0; }
+      .legend-lbl  { font-size: 8px; }
+      .legend-sub  { display: none; }
+    }
+
+    /* ════════════════════════════ CANS SECTION ════════════════════════════ */
+
+    #cans-section {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 52px 24px 80px;
+    }
+
+    #cans-section h2 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+    }
+
+    .section-subtitle {
+      font-size: 13px;
+      color: #8e8e93;
+      margin-top: 6px;
+    }
+
+    #cans-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 20px;
+      margin-top: 16px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #2c2c2e;
+    }
+
+    .cans-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      color: #ebebf0;
+    }
+
+    .cans-legend-can {
+      width: 8px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+
+    #cans-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 28px 16px;
+      margin-top: 28px;
+    }
+
+    .person-card  { min-width: 0; }
+
+    .person-name {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .person-specialty {
+      font-size: 10px;
+      font-weight: 500;
+      margin-top: 2px;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .person-total {
+      font-size: 10px;
+      color: #636366;
+      margin-bottom: 8px;
+    }
+
+    .cans-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px;
+      align-content: flex-start;
+    }
+
+    .can-icon {
+      display: block;
+      flex-shrink: 0;
+      transition: opacity 0.15s;
+    }
+    .can-icon:hover { opacity: 0.72; }
+
+    @media (max-width: 600px) {
+      #cans-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Reusable can shape (currentColor tinting) ── -->
+<svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+  <defs>
+    <symbol id="can-shape" viewBox="0 0 195 350">
+      <path fill="currentColor" transform="translate(93.902099609375,-0.2607421875)"
+        d="M0 0 C3.88436538 0.01140364 7.76845687 0.00460867 11.65281296 -0.00688362
+           C68.78217121 -0.15011009 68.78217121 -0.15011009 81.91040039 7.01074219
+           C84.09790039 9.26074219 84.09790039 9.26074219 85.16040039 12.57324219
+           C85.09790039 16.26074219 85.09790039 16.26074219 83.28540039 19.51074219
+           C81.77939472 23.00223996 81.77939472 23.00223996 82.80883789 25.44433594
+           C84.0865062 27.81134573 85.44995371 30.0970058 86.89672852 32.36425781
+           C88.90618163 35.53690654 90.83349403 38.75899932 92.76953125 41.97680664
+           C93.85343404 43.77449513 94.94526625 45.56742916 96.04541016 47.35522461
+           C96.55386475 48.18900635 97.06231934 49.02278809 97.58618164 49.88183594
+           C98.04549072 50.62876709 98.5047998 51.37569824 98.97802734 52.14526367
+           C100.84885303 55.67931743 101.22309634 58.87300236 101.22932816 62.83795547
+           C101.2331693 63.75711911 101.23701045 64.67628275 101.24096799 65.62329984
+           C101.24010151 66.62951092 101.23923502 67.63572199 101.23834229 68.67242432
+           C101.24131341 69.74417176 101.24428453 70.8159192 101.24734569 71.92014384
+           C101.2560408 75.52359332 101.25754163 79.1270096 101.2590332 82.73046875
+           C101.26366079 85.30917939 101.26868537 87.88788935 101.27407837 90.46659851
+           C101.2876554 97.48113617 101.29368544 104.4956681 101.29808903 111.51021671
+           C101.30085255 115.89101597 101.30509011 120.27181302 101.3095932 124.65261078
+           C101.32178511 136.7842711 101.33208454 148.91592966 101.33546829 161.04759598
+           C101.33579764 162.21208915 101.33579764 162.21208915 101.33613364 163.40010743
+           C101.33635192 164.17828267 101.3365702 164.95645792 101.33679509 165.75821424
+           C101.33723856 167.335066 101.33768512 168.91191777 101.33813477 170.48876953
+           C101.33846691 171.66202632 101.33846691 171.66202632 101.33880576 172.85898528
+           C101.34275319 185.53097815 101.36020588 198.2029135 101.38349429 210.87488416
+           C101.4072169 223.88827452 101.41967056 236.90163603 101.42083621 249.91504836
+           C101.42175247 257.2202758 101.42749229 264.52542829 101.44565582 271.83063507
+           C101.46268129 278.70229142 101.46430261 285.57380336 101.45551682 292.44547462
+           C101.45474527 294.9673863 101.45910454 297.48930556 101.46897507 300.01119804
+           C101.48166205 303.45467723 101.47583491 306.8976499 101.46539307 310.34112549
+           C101.47747767 311.83705778 101.47747767 311.83705778 101.48980641 313.36321092
+           C101.42992704 321.81007838 99.57838856 328.29973408 93.85180664 334.68652344
+           C91.96376926 336.3811316 90.08323575 337.44707928 87.84790039 338.63574219
+           C83.00457456 341.39717651 83.00457456 341.39717651 82.09790039 350.26074219
+           C29.95790039 350.26074219 -22.18209961 350.26074219 -75.90209961 350.26074219
+           C-76.23209961 347.29074219 -76.56209961 344.32074219 -76.90209961 341.26074219
+           C-78.89185894 339.04838423 -78.89185894 339.04838423 -81.58959961 337.76074219
+           C-87.22221193 334.29886442 -91.50245783 329.89342909 -93.4598729 323.41456336
+           C-93.93235028 321.11340933 -94.03102044 319.03491657 -94.03632069 316.68632221
+           C-94.04077853 315.76777527 -94.04523637 314.84922833 -94.0498293 313.90284663
+           C-94.04964494 312.89731768 -94.04946058 311.89178872 -94.04927063 310.85578918
+           C-94.05294732 309.78474731 -94.05662401 308.71370543 -94.06041211 307.61020774
+           C-94.07145512 304.00909526 -94.07529384 300.40801164 -94.07910156 296.80688477
+           C-94.08536571 294.22979643 -94.09201246 291.652709 -94.09901428 289.07562256
+           C-94.11876263 281.33376564 -94.12884256 273.59190745 -94.13774207 265.85003164
+           C-94.1421274 262.20262427 -94.14749355 258.55521835 -94.15273094 254.90781212
+           C-94.16974113 242.78044467 -94.18423504 230.65307812 -94.19147968 218.52570057
+           C-94.19338952 215.37968253 -94.19530986 212.2336645 -94.19726562 209.08764648
+           C-94.19799124 207.91478316 -94.19799124 207.91478316 -94.1987315 206.71822562
+           C-94.20703087 194.05335618 -94.23236711 181.38858121 -94.2648463 168.72375301
+           C-94.29793251 155.71600828 -94.31592983 142.70831154 -94.31912392 129.70052451
+           C-94.32128751 122.39914984 -94.330014 115.09791298 -94.3555851 107.79657936
+           C-94.37958759 100.92735261 -94.38310798 94.05837747 -94.37282372 87.18911743
+           C-94.37232771 84.66923384 -94.37866712 82.14933814 -94.39237976 79.62949181
+           C-94.41006767 76.18623492 -94.40300671 72.74387093 -94.3898468 69.3006134
+           C-94.40081605 68.30623805 -94.41178529 67.3118627 -94.42308694 66.28735477
+           C-94.36302516 59.76674017 -93.00830462 54.9847067 -89.90209961 49.26074219
+           C-89.3992041 48.33342285 -88.89630859 47.40610352 -88.37817383 46.45068359
+           C-87.90911621 45.67901855 -87.44005859 44.90735352 -86.95678711 44.11230469
+           C-86.43729492 43.2525 -85.91780273 42.39269531 -85.38256836 41.50683594
+           C-84.85276367 40.641875 -84.32295898 39.77691406 -83.77709961 38.88574219
+           C-83.23956055 37.99757812 -82.70202148 37.10941406 -82.14819336 36.19433594
+           C-80.11591172 32.84436546 -78.07581143 29.52130992 -75.90209961 26.26074219
+           C-75.51966068 21.56769075 -75.51966068 21.56769075 -76.96459961 17.19824219
+           C-78.40868127 14.21380675 -77.87376273 12.37006419 -76.90209961 9.26074219
+           C-61.49471319 -5.78047234 -20.45408962 -0.06060513 0 0 Z"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- ══════════════════════════════════ TREEMAP ══════════════════════════════════ -->
+<section id="treemap-section">
+  <div id="treemap"></div>
+
+  <div class="hud" id="hud">
+    <div><span class="hud-val" id="hud-tiles">0</span> tiles</div>
+    <div><span class="hud-val" id="hud-ms">0.00</span>ms/frame</div>
+  </div>
+
+  <div class="legend-bar" id="legend-bar"></div>
+
+  <div class="scroll-hint">member breakdown ↓</div>
+</section>
+
+<!-- ══════════════════════════════════ CANS ══════════════════════════════════ -->
+<section id="cans-section">
+  <h2>How each member drinks</h2>
+  <p class="section-subtitle">Each can = 10 drinks &mdash; colored by type, ordered most to fewest.</p>
+  <div id="cans-legend"></div>
+  <div id="cans-grid"></div>
+</section>
+
+<script type="module">
+import * as d3 from 'https://esm.sh/d3@7'
+
+// ── Shared constants ──────────────────────────────────────────────────────────
+
+const CATS = {
+  Beer:     { bg: '#f3d2a1', bgHover: '#e5b96a', fg: 'rgba(0,0,0,0.65)', accent: '#c87820', unlabeled: 864 },
+  Cocktail: { bg: '#aacae8', bgHover: '#76aede', fg: 'rgba(0,0,0,0.65)', accent: '#2e72b8', unlabeled: 512 },
+  Shot:     { bg: '#f0beb9', bgHover: '#e28278', fg: 'rgba(0,0,0,0.65)', accent: '#c04040', unlabeled: 120 },
+  Wine:     { bg: '#d2b9e3', bgHover: '#b88ed4', fg: 'rgba(0,0,0,0.65)', accent: '#8040b8', unlabeled:  59 },
+  Cider:    { bg: '#a7d6b9', bgHover: '#72c090', fg: 'rgba(0,0,0,0.65)', accent: '#2ea060', unlabeled:  23 },
+  Seltzer:  { bg: '#a6dbdb', bgHover: '#72bebe', fg: 'rgba(0,0,0,0.65)', accent: '#288888', unlabeled:  34 },
+  Other:    { bg: '#ccc9c4', bgHover: '#aea9a4', fg: 'rgba(0,0,0,0.65)', accent: '#6a6560', unlabeled:  17 },
+}
+
+const TYPE_ORDER = ['Beer', 'Cocktail', 'Shot', 'Wine', 'Cider', 'Seltzer', 'Other']
+
+const OPENMOJI = 'https://cdn.jsdelivr.net/npm/openmoji@15.0.0/color/svg/'
+const DRINK_ICON = {
+  'Corona':'1f37a','Coors Light':'1f37a','Guinness':'1f37a','Bud Light':'1f37a',
+  'Modelo':'1f37a','Bapple':'1f37a','Michelob Ultra':'1f37a','Kona':'1f30a',
+  'Tsingtao':'1f37a','PBR':'1f37a','Miller Lite':'1f37a','Busch':'1f37a',
+  'Bintang':'1f334','Sapporo':'1f376','Singha':'1f405','Sam Adams':'1f37a',
+  'Asahi':'1f37a','Budweiser':'1f37a','Imperial':'1f37a',
+  'Margarita':'1f379','Gin & Tonic':'1f378','Cutwater':'1f964',
+  'Espresso Martini':'2615','Vodka Redbull':'26a1','Rum & Coke':'1f943',
+  'Long Island':'1f379','Vodka Soda':'1f964','Moscow Mule':'1f37a',
+  'Jagerbomb':'1f4a3','Mojito':'1f33f','Vodka Cran':'1f352',
+  'Smirnoff Ice':'1f9ca','Sun Cruiser':'2600','Aperol Spritz':'1f37e',
+  'Hugo Spritz':'1f37e','Mai Tai':'1f379','Mango Margarita':'1f96d',
+  'Highball':'1f964','Bellini':'1f37e',
+  'Tequila':'1f943','Vodka':'1f943','Whiskey':'1f943','Fireball':'1f525',
+  'Jello Shot':'1f36e','Jäger':'1f98c','Limoncello':'1f34b',
+  'Green Tea':'1f375','Bourbon':'1f943','Gin':'1f33f',
+  'Red Wine':'1f377','White Wine':'1f942','Sangria':'1f377',
+  'Rosé':'1f338','Sake':'1f376','Pinot Grigio':'1f377',
+  'Prosecco':'1f37e','Chardonnay':'1f377',
+  'Downeast':'1f34e','Bold Rock':'1faa8','Angry Orchard':'1f34e',
+  'Somersby':'1f34f','Apple Cider':'1f34e','Blueberry Cider':'1fad0','Magners':'1f34f',
+  'High Noon':'1f31e','Nutrl':'1f9ca','White Claw':'1f9ca',
+  'Soju':'1f376','Strong Zero':'26a1','Twisted Tea':'1f375','Surfside':'1f3d6',
+}
+function iconSrc(name) { return OPENMOJI + (DRINK_ICON[name] ?? '1F379').toUpperCase() + '.svg' }
+
+const DRINK_DATA = [
+  { type: 'Beer', children: [
+    { name: 'Corona',         count: 286 }, { name: 'Coors Light',    count: 277 },
+    { name: 'Guinness',       count: 161 }, { name: 'Bud Light',      count: 147 },
+    { name: 'Modelo',         count: 116 }, { name: 'Michelob Ultra', count: 108 },
+    { name: 'Bapple',         count: 101 }, { name: 'Kona',           count:  64 },
+    { name: 'Tsingtao',       count:  57 }, { name: 'PBR',            count:  38 },
+    { name: 'Miller Lite',    count:  38 }, { name: 'Busch',          count:  38 },
+    { name: 'Bintang',        count:  30 }, { name: 'Sapporo',        count:  21 },
+    { name: 'Singha',         count:  21 }, { name: 'Sam Adams',      count:  17 },
+    { name: 'Asahi',          count:  17 }, { name: 'Budweiser',      count:  17 },
+    { name: 'Imperial',       count:  16 },
+  ]},
+  { type: 'Cocktail', children: [
+    { name: 'Margarita',        count: 71 }, { name: 'Gin & Tonic',      count: 68 },
+    { name: 'Cutwater',         count: 58 }, { name: 'Espresso Martini', count: 41 },
+    { name: 'Vodka Redbull',    count: 29 }, { name: 'Rum & Coke',       count: 29 },
+    { name: 'Vodka Soda',       count: 20 }, { name: 'Long Island',      count: 20 },
+    { name: 'Moscow Mule',      count: 18 }, { name: 'Bellini',          count: 18 },
+    { name: 'Aperol Spritz',    count: 13 }, { name: 'Jagerbomb',        count: 13 },
+    { name: 'Highball',         count: 12 }, { name: 'Mojito',           count: 12 },
+    { name: 'Mai Tai',          count: 11 }, { name: 'Mango Margarita',  count: 11 },
+    { name: 'Vodka Cran',       count: 11 }, { name: 'Smirnoff Ice',     count: 10 },
+    { name: 'Hugo Spritz',      count: 10 },
+  ]},
+  { type: 'Shot', children: [
+    { name: 'Tequila',    count: 173 }, { name: 'Vodka',      count:  75 },
+    { name: 'Whiskey',    count:  59 }, { name: 'Fireball',   count:  43 },
+    { name: 'Jello Shot', count:  30 }, { name: 'Jäger',      count:  12 },
+    { name: 'Limoncello', count:  10 }, { name: 'Green Tea',  count:  10 },
+    { name: 'Bourbon',    count:   7 }, { name: 'Gin',        count:   7 },
+  ]},
+  { type: 'Wine', children: [
+    { name: 'Red Wine',    count: 177 }, { name: 'White Wine',  count: 149 },
+    { name: 'Sangria',     count:  40 }, { name: 'Sake',        count:  18 },
+    { name: 'Rosé',        count:  14 }, { name: 'Pinot Grigio',count:   6 },
+    { name: 'Prosecco',    count:  13 }, { name: 'Chardonnay',  count:   5 },
+  ]},
+  { type: 'Cider', children: [
+    { name: 'Downeast',        count: 194 }, { name: 'Bold Rock',       count:  42 },
+    { name: 'Angry Orchard',   count:  27 }, { name: 'Somersby',        count:   9 },
+    { name: 'Apple Cider',     count:   6 }, { name: 'Blueberry Cider', count:   5 },
+    { name: 'Magners',         count:   4 },
+  ]},
+  { type: 'Seltzer', children: [
+    { name: 'High Noon',  count: 31 }, { name: 'Nutrl',      count:  5 },
+    { name: 'White Claw', count:  4 },
+  ]},
+  { type: 'Other', children: [
+    { name: 'Soju',        count: 60 }, { name: 'Strong Zero', count: 46 },
+    { name: 'Sun Cruiser', count: 17 }, { name: 'Twisted Tea', count: 16 },
+    { name: 'Surfside',    count:  6 },
+  ]},
+]
+
+const MERGE_INTO = { 'Pinot Grigio': 'White Wine', 'Chardonnay': 'White Wine' }
+
+function mergedData(data) {
+  return data.map(cat => {
+    const map = {}
+    for (const child of cat.children) {
+      const target = MERGE_INTO[child.name] ?? child.name
+      if (map[target]) map[target] = { ...map[target], count: map[target].count + child.count }
+      else map[target] = { ...child, name: target }
+    }
+    return { ...cat, children: Object.values(map) }
+  })
+}
+
+// ── Treemap setup ─────────────────────────────────────────────────────────────
+
+const treemapLayout = d3.treemap()
+  .tile(d3.treemapResquarify)
+  .paddingInner(d => d.depth === 1 ? 3 : 2)
+  .paddingOuter(3)
+  .round(true)
+
+const sectionEl  = document.getElementById('treemap-section')
+const treemapEl  = document.getElementById('treemap')
+const legendBar  = document.getElementById('legend-bar')
+
+let mouseX = -9999, mouseY = -9999   // section-relative
+const CURSOR_RADIUS  = 260
+const EXPAND_FACTOR  = 3.5
+const LERP           = 0.10
+
+let activeCat = null
+let tiles     = []
+let root      = null
+
+function init() {
+  const merged = mergedData(DRINK_DATA)
+
+  for (const type of TYPE_ORDER) {
+    const cat   = CATS[type]
+    const total = merged.find(d => d.type === type)?.children.reduce((s,c) => s+c.count, 0) ?? 0
+    const full  = total + cat.unlabeled
+    const item  = document.createElement('div')
+    item.className   = 'legend-item'
+    item.dataset.type = type
+    item.innerHTML = `
+      <span class="legend-dot" style="background:${cat.accent}"></span>
+      <span class="legend-lbl">${type} <span class="legend-sub">${full.toLocaleString()}${cat.unlabeled ? ` (+${cat.unlabeled.toLocaleString()} unlabeled)` : ''}</span></span>`
+    const isTouch = () => navigator.maxTouchPoints > 0
+    item.addEventListener('mouseenter', () => { if (!isTouch()) { activeCat = type; syncLegend() } })
+    item.addEventListener('mouseleave', () => { if (!isTouch()) { activeCat = null;  syncLegend() } })
+    item.addEventListener('click',      () => { activeCat = activeCat === type ? null : type; syncLegend() })
+    legendBar.appendChild(item)
+  }
+
+  const legendH = legendBar.getBoundingClientRect().height
+  const vw = sectionEl.getBoundingClientRect().width
+  const vh = sectionEl.getBoundingClientRect().height - legendH
+
+  root = d3.hierarchy({ children: merged })
+    .sum(d => d.count || 0)
+    .sort((a, b) => b.value - a.value)
+
+  treemapLayout.size([vw, vh])(root)
+
+  tiles = root.leaves().map(leaf => {
+    const d   = leaf.data
+    const type = leaf.parent.data.type
+    const cat  = CATS[type]
+
+    const el = document.createElement('div')
+    el.className = 'tile'
+    el.dataset.type = type
+    el.style.backgroundColor = cat.bg
+    el.innerHTML = `
+      <div class="tile-name"  style="color:${cat.fg}">${d.name}</div>
+      <div class="tile-count" style="color:${cat.fg}">${d.count.toLocaleString()}</div>
+      <img class="tile-img" src="${iconSrc(d.name)}" decoding="async" loading="lazy">`
+    treemapEl.appendChild(el)
+
+    const x = leaf.x0, y = leaf.y0
+    const w = leaf.x1 - leaf.x0, h = leaf.y1 - leaf.y0
+    el.style.transform = `translate(${x}px,${y}px)`
+    el.style.width  = w + 'px'
+    el.style.height = h + 'px'
+
+    return {
+      leaf, data: d, type, el, cat,
+      _w: d.count,
+      rx: x, ry: y, rw: w, rh: h,
+      currentOpacity: 1,
+      _hoverLevel: -1, _tier: -1, _pop: -1,
+    }
+  })
+
+  document.getElementById('hud-tiles').textContent = tiles.length
+}
+
+function syncLegend() {
+  legendBar.querySelectorAll('.legend-item').forEach(el =>
+    el.classList.toggle('active', el.dataset.type === activeCat))
+}
+
+// ── Mouse / touch — coordinates relative to sectionEl ────────────────────────
+
+function updateMouse(cx, cy) {
+  const rect = sectionEl.getBoundingClientRect()
+  const rx = cx - rect.left
+  const ry = cy - rect.top
+  if (rx < 0 || rx > rect.width || ry < 0 || ry > rect.height) {
+    mouseX = mouseY = -9999
+  } else {
+    mouseX = rx; mouseY = ry
+  }
+}
+
+document.addEventListener('mousemove',  e => updateMouse(e.clientX, e.clientY))
+document.addEventListener('mouseleave', () => { mouseX = mouseY = -9999 })
+
+let touchTimer = null
+document.addEventListener('touchstart', e => {
+  if (e.target.closest('.legend-bar')) return
+  updateMouse(e.touches[0].clientX, e.touches[0].clientY)
+  clearTimeout(touchTimer)
+}, { passive: true })
+document.addEventListener('touchmove', e => {
+  if (e.target.closest('.legend-bar')) return
+  updateMouse(e.touches[0].clientX, e.touches[0].clientY)
+  e.preventDefault()
+}, { passive: false })
+document.addEventListener('touchend', () => {
+  clearTimeout(touchTimer)
+  touchTimer = setTimeout(() => { mouseX = mouseY = -9999 }, 800)
+})
+
+// ── Render loop ───────────────────────────────────────────────────────────────
+
+function lerpColor(a, b, t) {
+  const ar=parseInt(a.slice(1,3),16), ag=parseInt(a.slice(3,5),16), ab=parseInt(a.slice(5,7),16)
+  const br=parseInt(b.slice(1,3),16), bg=parseInt(b.slice(3,5),16), bb=parseInt(b.slice(5,7),16)
+  return `rgb(${Math.round(ar+(br-ar)*t)},${Math.round(ag+(bg-ag)*t)},${Math.round(ab+(bb-ab)*t)})`
+}
+
+function tick() {
+  const t0 = performance.now()
+  if (!root) { requestAnimationFrame(tick); return }
+
+  const legendH = legendBar.offsetHeight
+  const vw = sectionEl.getBoundingClientRect().width
+  const vh = sectionEl.getBoundingClientRect().height - legendH
+
+  const weightMap = {}
+  for (const tile of tiles) {
+    const cx = tile.rx + tile.rw / 2
+    const cy = tile.ry + tile.rh / 2
+    const dist = Math.sqrt((mouseX - cx) ** 2 + (mouseY - cy) ** 2)
+
+    let expand = 1
+    if (dist < CURSOR_RADIUS) {
+      const force = 1 - dist / CURSOR_RADIUS
+      expand = 1 + force * force * EXPAND_FACTOR
+    }
+    if (activeCat !== null) {
+      expand = tile.type === activeCat
+        ? Math.max(expand, 2.5)
+        : Math.min(expand, 0.5)
+    }
+
+    tile._w += (tile.data.count * expand - tile._w) * LERP
+    weightMap[tile.data.name] = tile._w
+
+    const tOp = activeCat !== null ? (tile.type === activeCat ? 1 : 0.18) : 1
+    tile.currentOpacity += (tOp - tile.currentOpacity) * 0.15
+  }
+
+  root.sum(d => weightMap[d.name] ?? 0)
+  treemapLayout.size([vw, vh])(root)
+
+  for (const tile of tiles) {
+    const tx = tile.leaf.x0, ty = tile.leaf.y0
+    const tw = tile.leaf.x1 - tile.leaf.x0, th = tile.leaf.y1 - tile.leaf.y0
+
+    tile.rx += (tx - tile.rx) * LERP
+    tile.ry += (ty - tile.ry) * LERP
+    tile.rw += (tw - tile.rw) * LERP
+    tile.rh += (th - tile.rh) * LERP
+
+    const rx = Math.round(tile.rx * 10) / 10
+    const ry = Math.round(tile.ry * 10) / 10
+    const rw = Math.round(tile.rw)
+    const rh = Math.round(tile.rh)
+
+    tile.el.style.transform = `translate(${rx}px,${ry}px)`
+    tile.el.style.width  = rw + 'px'
+    tile.el.style.height = rh + 'px'
+
+    const opi = Math.round(tile.currentOpacity * 100)
+    if (tile._pop !== opi) { tile.el.style.opacity = tile.currentOpacity; tile._pop = opi }
+
+    const hdist = Math.sqrt((mouseX - (tile.rx + tile.rw/2))**2 + (mouseY - (tile.ry + tile.rh/2))**2)
+    const intensity  = hdist < CURSOR_RADIUS ? (1 - hdist / CURSOR_RADIUS) : 0
+    const hoverLevel = Math.round(intensity * 5)
+    if (tile._hoverLevel !== hoverLevel) {
+      if (hoverLevel > 0) {
+        const f = hoverLevel / 5
+        tile.el.style.backgroundColor = lerpColor(tile.cat.bg, tile.cat.bgHover, f)
+        tile.el.style.boxShadow = `0 ${Math.round(f*6)}px ${Math.round(f*18)}px rgba(0,0,0,${(f*0.18).toFixed(2)})`
+        tile.el.style.zIndex = 10 + Math.round(f * 10)
+      } else {
+        tile.el.style.backgroundColor = tile.cat.bg
+        tile.el.style.boxShadow = ''
+        tile.el.style.zIndex = '0'
+      }
+      tile._hoverLevel = hoverLevel
+    }
+
+    const area = rw * rh
+    let tier = 0
+    if      (area >= 10000) tier = 3
+    else if (area >=  2000) tier = 2
+    else if (area >=   500) tier = 1
+
+    if (tile._tier !== tier || tier === 3) {
+      if (!tile._els) {
+        tile._els = {
+          name:  tile.el.querySelector('.tile-name'),
+          count: tile.el.querySelector('.tile-count'),
+          img:   tile.el.querySelector('.tile-img'),
+        }
+      }
+      const { name: nameEl, count: countEl, img: imgEl } = tile._els
+
+      if (tier === 0) {
+        nameEl.style.display = 'none'; countEl.style.display = 'none'
+        imgEl.style.transform = 'translate(-50%,-50%) scale(0)'
+      } else if (tier === 1) {
+        nameEl.style.display = ''; nameEl.style.fontSize = '7px'
+        countEl.style.display = ''; countEl.style.fontSize = '6px'
+        imgEl.style.transform = 'translate(-50%,-50%) scale(0)'
+      } else if (tier === 2) {
+        const sz = Math.min(12, 9 + (area - 4500) / 5000)
+        nameEl.style.display = ''; nameEl.style.fontSize = sz + 'px'
+        countEl.style.display = ''; countEl.style.fontSize = sz + 'px'
+      } else {
+        const sz = Math.min(14, 11 + area / 25000)
+        nameEl.style.display = ''; nameEl.style.fontSize = sz + 'px'
+        countEl.style.display = ''; countEl.style.fontSize = sz + 'px'
+      }
+      tile._tier = tier
+    }
+  }
+
+  document.getElementById('hud-ms').textContent = (performance.now() - t0).toFixed(2)
+  requestAnimationFrame(tick)
+}
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+
+let resizeTimer
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer)
+  treemapLayout.tile(d3.treemapSquarify)
+  resizeTimer = setTimeout(() => {
+    const legendH = legendBar.offsetHeight
+    const vw = sectionEl.getBoundingClientRect().width
+    const vh = sectionEl.getBoundingClientRect().height - legendH
+    for (const tile of tiles) tile._w = tile.data.count
+    root.sum(d => d.count || 0)
+    root.each(d => { delete d._squarify })
+    treemapLayout.tile(d3.treemapResquarify)
+    treemapLayout.size([vw, vh])(root)
+    for (const tile of tiles) {
+      tile.rx = tile.leaf.x0; tile.ry = tile.leaf.y0
+      tile.rw = tile.leaf.x1 - tile.leaf.x0
+      tile.rh = tile.leaf.y1 - tile.leaf.y0
+    }
+  }, 150)
+})
+
+// ── Cans section ──────────────────────────────────────────────────────────────
+
+const PEOPLE = [
+  { name: 'Hunter', drinks: { Beer: 630, Cocktail: 151, Shot: 74,  Wine: 102, Cider: 2, Seltzer: 28,  Other: 5  } },
+  { name: 'Joseph', drinks: { Beer: 440, Cocktail: 180, Shot: 61,  Wine: 40,  Cider: 5, Seltzer: 125, Other: 15 } },
+  { name: 'Jacob',  drinks: { Beer: 187, Cocktail: 192, Shot: 154, Wine: 150, Cider: 0, Seltzer: 88,  Other: 27 } },
+  { name: 'Lucas',  drinks: { Beer: 344, Cocktail: 142, Shot: 15,  Wine: 35,  Cider: 1, Seltzer: 49,  Other: 1  } },
+  { name: 'Miggy',  drinks: { Beer: 113, Cocktail: 86,  Shot: 74,  Wine: 68,  Cider: 1, Seltzer: 24,  Other: 9  } },
+  { name: 'Marek',  drinks: { Beer: 138, Cocktail: 58,  Shot: 31,  Wine: 18,  Cider: 0, Seltzer: 15,  Other: 7  } },
+  { name: 'Liam',   drinks: { Beer: 197, Cocktail: 37,  Shot: 6,   Wine: 15,  Cider: 0, Seltzer: 6,   Other: 2  } },
+  { name: 'Maxim',  drinks: { Beer: 102, Cocktail: 44,  Shot: 25,  Wine: 38,  Cider: 1, Seltzer: 11,  Other: 5  } },
+  { name: 'Cole',   drinks: { Beer: 55,  Cocktail: 59,  Shot: 50,  Wine: 2,   Cider: 8, Seltzer: 38,  Other: 6  } },
+  { name: 'Avi',    drinks: { Beer: 123, Cocktail: 34,  Shot: 11,  Wine: 11,  Cider: 2, Seltzer: 11,  Other: 2  } },
+  { name: 'Owen',   drinks: { Beer: 52,  Cocktail: 13,  Shot: 36,  Wine: 8,   Cider: 1, Seltzer: 3,   Other: 6  } },
+  { name: 'Kacper', drinks: { Beer: 72,  Cocktail: 8,   Shot: 9,   Wine: 2,   Cider: 0, Seltzer: 2,   Other: 2  } },
+]
+
+function renderCans() {
+  // Legend
+  const cansLegend = document.getElementById('cans-legend')
+  TYPE_ORDER.forEach(type => {
+    const item = document.createElement('div')
+    item.className = 'cans-legend-item'
+    item.innerHTML = `
+      <svg class="cans-legend-can" viewBox="0 0 195 350" style="color:${CATS[type].bg}">
+        <use href="#can-shape"/>
+      </svg>
+      <span>${type}</span>`
+    cansLegend.appendChild(item)
+  })
+
+  // Grid
+  const grid = document.getElementById('cans-grid')
+  const CAN_W = 13, CAN_H = 23
+
+  PEOPLE.forEach(person => {
+    const total = TYPE_ORDER.reduce((s, t) => s + (person.drinks[t] || 0), 0)
+
+    let topType = TYPE_ORDER[0], topCount = 0
+    TYPE_ORDER.forEach(t => {
+      if ((person.drinks[t] || 0) > topCount) { topCount = person.drinks[t]; topType = t }
+    })
+    const topPct = Math.round(topCount / total * 100)
+
+    const card = document.createElement('div')
+    card.className = 'person-card'
+
+    const nameDiv = document.createElement('div')
+    nameDiv.className = 'person-name'
+    nameDiv.textContent = person.name
+
+    const specialtyDiv = document.createElement('div')
+    specialtyDiv.className = 'person-specialty'
+    specialtyDiv.style.color = CATS[topType].bg
+    specialtyDiv.textContent = `${topPct}% ${topType}`
+
+    const totalDiv = document.createElement('div')
+    totalDiv.className = 'person-total'
+    totalDiv.textContent = `${total.toLocaleString()} drinks total`
+
+    const cansDiv = document.createElement('div')
+    cansDiv.className = 'cans-container'
+
+    TYPE_ORDER.forEach(type => {
+      const count   = person.drinks[type] || 0
+      const numCans = Math.round(count / 10)
+      for (let i = 0; i < numCans; i++) {
+        const canSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+        canSvg.setAttribute('width', CAN_W)
+        canSvg.setAttribute('height', CAN_H)
+        canSvg.setAttribute('viewBox', '0 0 195 350')
+        canSvg.classList.add('can-icon')
+        canSvg.style.color = CATS[type].bg
+
+        const use = document.createElementNS('http://www.w3.org/2000/svg', 'use')
+        use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#can-shape')
+        use.setAttribute('href', '#can-shape')
+        canSvg.appendChild(use)
+
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title')
+        title.textContent = `${type} (${count} drinks)`
+        canSvg.appendChild(title)
+
+        cansDiv.appendChild(canSvg)
+      }
+    })
+
+    card.appendChild(nameDiv)
+    card.appendChild(specialtyDiv)
+    card.appendChild(totalDiv)
+    card.appendChild(cansDiv)
+    grid.appendChild(card)
+  })
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+init()
+requestAnimationFrame(tick)
+renderCans()
+</script>
+</body>
+</html>
