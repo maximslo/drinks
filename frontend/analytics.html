@@ -632,7 +632,7 @@ function renderTimeline(monthCounts, sortedMonths) {
 async function main() {
   try {
     const text = await fetch('drink_log.csv').then(r => r.text());
-    const rows = parseCSV(text);
+    const rows = parseCSV(text).slice(0, 5000);
     inferYears(rows);
     const data = aggregate(rows);
 
