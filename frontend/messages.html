@@ -238,6 +238,27 @@
       color: #8e8e93;
       font-size: 14px;
     }
+
+    #chat-tabs {
+      display: flex;
+      gap: 6px;
+      padding: 8px 16px;
+      background: #fff;
+      border-bottom: 1px solid #e5e5ea;
+    }
+
+    .chat-tab {
+      padding: 5px 14px;
+      border-radius: 16px;
+      font-size: 13px;
+      cursor: pointer;
+      border: 1px solid #d1d1d6;
+      color: #3c3c43;
+      background: none;
+      transition: background .1s;
+    }
+    .chat-tab:hover { background: #f2f2f7; }
+    .chat-tab.active { background: #0B84FE; color: #fff; border-color: #0B84FE; }
   </style>
 </head>
 <body>
@@ -256,8 +277,9 @@
     <div>local mac mini data, remember to sync!</div>
     <input id="search" type="text" placeholder="Search messages…">
   </div>
+  <div id="chat-tabs"></div>
   <div id="load-older" class="hidden">
-    <button onclick="loadOlder()">Load older messages</button>
+    <button>Load older messages</button>
   </div>
   <div id="chat-feed">
     <div id="status">Loading…</div>
@@ -276,91 +298,61 @@
   const getHue = name => { const i = NAMES.indexOf(name); return i >= 0 ? i * 28 : 308; };
   const avatarStyle = name => `background:hsl(${getHue(name)},65%,50%)`;
 
+  const CHAT_LABELS = {
+    'chat313739884378608609': 'Main',
+    'chat247636595391927399': 'OG',
+    'chat26176758262309627':  'OG (oldest)',
+  };
+
   const state = {
     offset: 0,
     total: 0,
     allMessages: [],   // stored ascending (oldest first)
     filter: { name: '', search: '' },
+    chatId: null,
   };
 
   // ── Fetch ────────────────────────────────────────────────────────────────
 
-  async function fetchMessages(reset = false) {
-    if (reset) {
-      state.offset = 0;
-      state.allMessages = [];
-    }
+  async function autoLoadAll() {
+    state.offset = 0;
+    state.allMessages = [];
 
-    let url = `${API}/messages?limit=${PAGE}&offset=${state.offset}&show_reactions=false`;
-    if (state.filter.name)   url += `&name=${encodeURIComponent(state.filter.name)}`;
-    if (state.filter.search) url += `&search=${encodeURIComponent(state.filter.search)}`;
+    const statusEl = document.getElementById('status');
 
-    let data;
-    try {
-      const res = await fetch(url);
-      data = await res.json();
-    } catch (e) {
-      const s = document.getElementById('status');
-      if (s) s.textContent = 'Could not reach API — is the server running?';
-      console.error('fetch failed', e);
-      return;
-    }
+    do {
+      let url = `${API}/messages?limit=${PAGE}&offset=${state.offset}&show_reactions=false`;
+      if (state.filter.name)   url += `&name=${encodeURIComponent(state.filter.name)}`;
+      if (state.filter.search) url += `&search=${encodeURIComponent(state.filter.search)}`;
+      if (state.chatId)        url += `&chat_id=${encodeURIComponent(state.chatId)}`;
 
-    // API returns newest-first; reverse so we store oldest-first
-    const incoming = [...data.messages].reverse();
-    state.allMessages = reset ? incoming : [...incoming, ...state.allMessages];
-    state.total = data.total;
-    state.offset += data.messages.length;
+      let data;
+      try {
+        const res = await fetch(url);
+        data = await res.json();
+      } catch (e) {
+        if (statusEl) statusEl.textContent = 'Could not reach API — is the server running?';
+        console.error('fetch failed', e);
+        return;
+      }
 
-    render(reset, incoming.length);
-  }
+      const incoming = [...data.messages].reverse();
+      state.allMessages = [...incoming, ...state.allMessages];
+      state.total = data.total;
+      state.offset += data.messages.length;
 
-  async function loadOlder() {
+      if (statusEl) statusEl.textContent = `Loading… ${state.allMessages.length} / ${state.total}`;
+    } while (state.allMessages.length < state.total);
+
     const feed = document.getElementById('chat-feed');
-    const prevScrollHeight = feed.scrollHeight;
-    await fetchMessages(false);
-    requestAnimationFrame(() => {
-      feed.scrollTop = feed.scrollHeight - prevScrollHeight;
-    });
+    if (statusEl) statusEl.remove();
+    feed.innerHTML = '';
+    renderMessageBlock(feed, state.allMessages, 'append');
+    document.getElementById('load-older').classList.add('hidden');
+    feed.scrollTop = 0;
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
-
-  function render(reset, newCount) {
-    const feed = document.getElementById('chat-feed');
-    const statusEl = document.getElementById('status');
-    if (statusEl) statusEl.remove();
-
-    if (state.allMessages.length === 0) {
-      feed.innerHTML = '<div id="status">No messages found.</div>';
-      document.getElementById('load-older').classList.add('hidden');
-      return;
-    }
-
-    if (reset) {
-      feed.innerHTML = '';
-      renderMessageBlock(feed, state.allMessages, 'append');
-      // scroll to bottom
-      requestAnimationFrame(() => { feed.scrollTop = feed.scrollHeight; });
-    } else {
-      // prepend older messages at top
-      const frag = document.createDocumentFragment();
-      const tmp = document.createElement('div');
-      renderMessageBlock(tmp, state.allMessages.slice(0, newCount), 'append');
-      while (tmp.firstChild) frag.appendChild(tmp.firstChild);
-      feed.insertBefore(frag, feed.firstChild);
-    }
-
-    // update load-older button
-    const btn = document.getElementById('load-older');
-    if (state.allMessages.length < state.total) {
-      btn.classList.remove('hidden');
-      btn.querySelector('button').textContent =
-        `Load older (showing ${state.allMessages.length} of ${state.total})`;
-    } else {
-      btn.classList.add('hidden');
-    }
-  }
 
   function renderMessageBlock(container, messages, mode) {
     let lastDate = null;
@@ -488,6 +480,39 @@
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + timeStr;
   }
 
+  // ── Chat tabs ─────────────────────────────────────────────────────────────
+
+  async function buildChatTabs() {
+    let chats;
+    try {
+      const res = await fetch(`${API}/chats`);
+      chats = await res.json();
+    } catch (e) {
+      return;
+    }
+
+    const tabBar = document.getElementById('chat-tabs');
+    tabBar.innerHTML = '';
+    chats.forEach((chat, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'chat-tab' + (i === 0 ? ' active' : '');
+      btn.dataset.chatId = chat.chat_id;
+      btn.textContent = `${chat.label} (${chat.message_count.toLocaleString()})`;
+      btn.onclick = () => setChatFilter(chat.chat_id);
+      tabBar.appendChild(btn);
+    });
+
+    if (chats.length > 0) state.chatId = chats[0].chat_id;
+  }
+
+  function setChatFilter(chatId) {
+    state.chatId = chatId;
+    document.querySelectorAll('.chat-tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.chatId === chatId);
+    });
+    autoLoadAll();
+  }
+
   // ── Sidebar ───────────────────────────────────────────────────────────────
 
   function buildSidebar() {
@@ -510,7 +535,7 @@
     document.querySelectorAll('.person-item').forEach(el => {
       el.classList.toggle('active', el.dataset.name === name);
     });
-    fetchMessages(true);
+    autoLoadAll();
   }
 
   // ── Search ────────────────────────────────────────────────────────────────
@@ -520,7 +545,7 @@
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
       state.filter.search = e.target.value.trim();
-      fetchMessages(true);
+      autoLoadAll();
     }, 300);
   });
 
@@ -537,8 +562,12 @@
 
   // ── Init ──────────────────────────────────────────────────────────────────
 
-  buildSidebar();
-  fetchMessages(true);
+  async function init() {
+    buildSidebar();
+    await buildChatTabs();
+    autoLoadAll();
+  }
+  init();
 </script>
 </body>
 </html>

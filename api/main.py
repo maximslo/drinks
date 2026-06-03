@@ -182,6 +182,21 @@ def recent(limit: int = 10):
     conn.close()
     return [dict(r) for r in rows]
 
+@app.get("/chats")
+def get_chats():
+    conn = get_messages_db()
+    rows = conn.execute(
+        "SELECT chat_id, COUNT(*) as message_count FROM messages WHERE chat_id IS NOT NULL GROUP BY chat_id ORDER BY message_count DESC"
+    ).fetchall()
+    conn.close()
+    labels = {
+        "chat313739884378608609": "Main",
+        "chat247636595391927399": "OG",
+        "chat26176758262309627":  "OG (oldest)",
+    }
+    return [{"chat_id": r["chat_id"], "label": labels.get(r["chat_id"], r["chat_id"]), "message_count": r["message_count"]} for r in rows]
+
+
 @app.get("/messages")
 def get_messages(
     limit: int = 100,
@@ -189,6 +204,7 @@ def get_messages(
     name: str = None,
     show_reactions: bool = False,
     search: str = None,
+    chat_id: str = None,
 ):
     conn = get_messages_db()
     conditions = []
@@ -211,6 +227,10 @@ def get_messages(
     if search:
         conditions.append("text LIKE ?")
         params.append(f"%{search}%")
+
+    if chat_id:
+        conditions.append("chat_id = ?")
+        params.append(chat_id)
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 

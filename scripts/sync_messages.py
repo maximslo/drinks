@@ -8,7 +8,11 @@ from datetime import datetime, timezone
 CHAT_DB = os.path.expanduser("~/Library/Messages/chat.db")
 MESSAGES_DB = os.path.expanduser("~/drinks/data/messages.db")
 ATTACHMENTS_DIR = os.path.expanduser("~/drinks/data/attachments")
-CHAT_ID = "chat313739884378608609"
+CHAT_IDS = [
+    "chat313739884378608609",   # main / current
+    "chat247636595391927399",   # OG
+    "chat26176758262309627",    # OG (oldest)
+]
 
 APPLE_EPOCH = 978307200
 REACTION_PREFIXES = ("loved", "liked", "disliked", "laughed at", "emphasized", "questioned", "reacted")
@@ -120,7 +124,8 @@ def init_db(conn):
             is_from_me     INTEGER NOT NULL DEFAULT 0,
             has_attachment INTEGER NOT NULL DEFAULT 0,
             is_reaction    INTEGER NOT NULL DEFAULT 0,
-            attachment_path TEXT
+            attachment_path TEXT,
+            chat_id        TEXT
         )
     """)
     conn.execute("""
@@ -133,20 +138,34 @@ def init_db(conn):
         conn.execute("ALTER TABLE messages ADD COLUMN attachment_path TEXT")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE messages ADD COLUMN chat_id TEXT")
+        conn.execute("UPDATE messages SET chat_id = 'chat313739884378608609' WHERE chat_id IS NULL")
+    except sqlite3.OperationalError:
+        pass
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_id ON messages(chat_id)")
+    # migrate old global meta key to per-chat key
+    old = conn.execute("SELECT value FROM meta WHERE key='last_synced_rowid'").fetchone()
+    if old:
+        conn.execute(
+            "INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)",
+            ("last_synced_rowid_chat313739884378608609", old[0])
+        )
+        conn.execute("DELETE FROM meta WHERE key='last_synced_rowid'")
     conn.commit()
 
 
-def get_last_rowid(conn):
-    row = conn.execute("SELECT value FROM meta WHERE key='last_synced_rowid'").fetchone()
+def get_last_rowid(conn, chat_id):
+    row = conn.execute("SELECT value FROM meta WHERE key=?", (f"last_synced_rowid_{chat_id}",)).fetchone()
     return int(row[0]) if row else 0
 
 
-def set_last_rowid(conn, rowid):
-    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_synced_rowid', ?)", (rowid,))
+def set_last_rowid(conn, chat_id, rowid):
+    conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (f"last_synced_rowid_{chat_id}", rowid))
     conn.commit()
 
 
-def fetch_from_chat_db(chat_conn, last_rowid):
+def fetch_from_chat_db(chat_conn, last_rowid, chat_id):
     return chat_conn.execute("""
         SELECT
             m.ROWID,
@@ -168,7 +187,7 @@ def fetch_from_chat_db(chat_conn, last_rowid):
         WHERE c.chat_identifier = ?
           AND m.ROWID > ?
         ORDER BY m.ROWID ASC, a.ROWID ASC
-    """, (CHAT_ID, last_rowid)).fetchall()
+    """, (chat_id, last_rowid)).fetchall()
 
 
 def deduplicate_rows(rows):
@@ -236,7 +255,7 @@ def fix_heic(msg_conn, verbose):
     return count
 
 
-def upsert_messages(msg_conn, rows, verbose):
+def upsert_messages(msg_conn, rows, chat_id, verbose):
     count = 0
     for rowid, phone, raw_text, attributed_body, date_val, is_from_me, has_attachment, attach_filename, attach_mime in rows:
         sent_at = apple_date_to_iso(date_val)
@@ -245,9 +264,9 @@ def upsert_messages(msg_conn, rows, verbose):
         attach_path = copy_attachment(rowid, attach_filename)
         msg_conn.execute(
             "INSERT OR IGNORE INTO messages "
-            "(rowid, phone, text, sent_at, is_from_me, has_attachment, is_reaction, attachment_path) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (rowid, phone, text, sent_at, is_from_me or 0, has_attachment or 0, reaction, attach_path)
+            "(rowid, phone, text, sent_at, is_from_me, has_attachment, is_reaction, attachment_path, chat_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (rowid, phone, text, sent_at, is_from_me or 0, has_attachment or 0, reaction, attach_path, chat_id)
         )
         count += 1
         if verbose:
@@ -353,6 +372,7 @@ def backfill_missing_attachments(msg_conn, chat_conn, verbose):
 def main():
     parser = argparse.ArgumentParser(description="Sync iMessage beer chat to local messages.db")
     parser.add_argument("--backfill", action="store_true", help="Sync all history from ROWID 0")
+    parser.add_argument("--chat-id", help="Sync only this chat ID (default: all known chats)")
     parser.add_argument("--fix-text", action="store_true", help="Re-parse attributedBody for existing NULL-text rows only")
     parser.add_argument("--fix-attachments", action="store_true", help="Copy missing attachment files for existing rows")
     parser.add_argument("--fix-heic", action="store_true", help="Convert existing .heic attachments to .jpg")
@@ -389,19 +409,21 @@ def main():
         print(f"[sync] Fixed {fixed_reactions} reaction flags.")
         return
 
-    last_rowid = 0 if args.backfill else get_last_rowid(msg_conn)
-    print(f"[sync] {'Backfill' if args.backfill else 'Incremental'} sync from ROWID {last_rowid}...")
+    chat_ids_to_sync = [args.chat_id] if args.chat_id else CHAT_IDS
 
-    rows = fetch_from_chat_db(chat_conn, last_rowid)
-    rows = deduplicate_rows(rows)
+    for chat_id in chat_ids_to_sync:
+        last_rowid = 0 if args.backfill else get_last_rowid(msg_conn, chat_id)
+        print(f"[sync] {'Backfill' if args.backfill else 'Incremental'} sync of {chat_id} from ROWID {last_rowid}...")
 
-    if rows:
-        count = upsert_messages(msg_conn, rows, args.verbose)
-        last_new_rowid = rows[-1][0]
-        set_last_rowid(msg_conn, last_new_rowid)
-        print(f"[sync] Inserted {count} rows (last ROWID: {last_new_rowid})")
-    else:
-        print("[sync] No new messages.")
+        rows = fetch_from_chat_db(chat_conn, last_rowid, chat_id)
+        rows = deduplicate_rows(rows)
+
+        if rows:
+            count = upsert_messages(msg_conn, rows, chat_id, args.verbose)
+            set_last_rowid(msg_conn, chat_id, rows[-1][0])
+            print(f"[sync] Inserted {count} rows (last ROWID: {rows[-1][0]})")
+        else:
+            print(f"[sync] No new messages for {chat_id}.")
 
     if args.backfill:
         print("[sync] Backfilling text from attributedBody for existing rows...")
