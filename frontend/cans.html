@@ -4,9 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>One Drink At A Time</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@1,400;1,500&family=Inter:wght@500;700&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -16,6 +13,39 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
       -webkit-font-smoothing: antialiased;
     }
+
+    /* ════════════════════════════ PAGE LOADER ════════════════════════════ */
+
+    #page-loader {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: #1c1c1e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 1;
+      transition: opacity 0.5s ease;
+    }
+
+    #page-loader.done {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .loader-spinner {
+      width: 28px;
+      height: 28px;
+      border: 2px solid rgba(255,255,255,0.10);
+      border-top-color: #f3d2a1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* While the leaderboard cover is on screen, treemap stays visible but inert. */
+    body.hero-engaged #treemap-section { pointer-events: none; }
 
     /* ════════════════════════════ HERO STACK (LEADERBOARD + TREEMAP) ════════════════════════════ */
 
@@ -45,7 +75,9 @@
       width: 100%;
       height: 100vh;
       z-index: 5;
-      background: #1c1c1e;
+      background: rgba(28, 28, 30, 0.55);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -59,27 +91,12 @@
       max-width: 520px;
       display: flex;
       flex-direction: column;
-      gap: 24px;
-    }
-
-    .cover-header {
-      text-align: left;
-    }
-
-    .cover-title {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
-      font-size: 36px;
-      font-weight: 700;
-      letter-spacing: -1.2px;
-      line-height: 1.05;
-      color: #f2f2f7;
-    }
-
-    .cover-title .cover-serif {
-      font-family: 'Fraunces', 'Georgia', 'Times New Roman', serif;
-      font-style: italic;
-      font-weight: 500;
-      letter-spacing: -0.4px;
+      gap: 22px;
+      background: rgba(28, 28, 30, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 22px;
+      padding: 32px 30px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
     }
 
     /* Group progress card */
@@ -227,8 +244,8 @@
     }
 
     @media (max-width: 600px) {
-      #leaderboard-cover { padding: 32px 20px; }
-      .cover-title { font-size: 28px; letter-spacing: -0.8px; }
+      #leaderboard-cover { padding: 24px 16px; }
+      .cover-inner { padding: 24px 22px; border-radius: 18px; gap: 18px; }
       .cover-progress-total { font-size: 30px; }
       .cover-progress-goal { font-size: 16px; }
       .cover-row { grid-template-columns: 24px 1fr auto 56px; gap: 10px; padding: 9px 0; }
@@ -995,6 +1012,11 @@
 </head>
 <body>
 
+<!-- ── Loading state (hides once treemap has painted) ── -->
+<div id="page-loader" aria-hidden="true">
+  <div class="loader-spinner"></div>
+</div>
+
 <!-- ── Reusable can shape (currentColor tinting) ── -->
 <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
   <defs>
@@ -1087,10 +1109,6 @@
 
   <section id="leaderboard-cover">
     <div class="cover-inner">
-      <header class="cover-header">
-        <h1 class="cover-title">🍺<span class="cover-serif"> Wrapped</span></h1>
-      </header>
-
       <div class="cover-progress">
         <div class="cover-progress-label">Group Progress</div>
         <div class="cover-progress-total">5,000<span class="cover-progress-goal"> / 10,000</span></div>
@@ -1404,7 +1422,14 @@ function syncLegend() {
 
 // ── Mouse / touch — coordinates relative to sectionEl ────────────────────────
 
+// Treemap stays inert while the leaderboard cover is on screen.
+const leaderboardEl = document.getElementById('leaderboard-cover')
+function heroEngaged() {
+  return !!leaderboardEl && leaderboardEl.getBoundingClientRect().bottom > 0
+}
+
 function updateMouse(cx, cy) {
+  if (heroEngaged()) { mouseX = mouseY = -9999; return }
   const rect = sectionEl.getBoundingClientRect()
   const rx = cx - rect.left
   const ry = cy - rect.top
@@ -1684,11 +1709,13 @@ renderLeaderboardCover()
     if (fired) return
     if (lb.getBoundingClientRect().bottom <= 0) {
       fired = true
+      document.body.classList.remove('hero-engaged')
       window.removeEventListener('scroll', onScroll)
       lockScrollFor(LOCK_MS)
     }
   }
 
+  document.body.classList.add('hero-engaged')
   window.addEventListener('scroll', onScroll, { passive: true })
 })()
 
@@ -2102,6 +2129,23 @@ renderDuoMoments()
 renderContexts()
 renderConvergence()
 renderBump()
+
+// Hide loader once the treemap has painted AND fonts have loaded (cap at 3s).
+;(() => {
+  const loader = document.getElementById('page-loader')
+  if (!loader) return
+
+  const fontsReady = document.fonts ? document.fonts.ready : Promise.resolve()
+  const framesReady = new Promise(r =>
+    requestAnimationFrame(() => requestAnimationFrame(r))
+  )
+  const fallback = new Promise(r => setTimeout(r, 3000))
+
+  Promise.race([Promise.all([fontsReady, framesReady]), fallback]).then(() => {
+    loader.classList.add('done')
+    setTimeout(() => loader.remove(), 600)
+  })
+})()
 
 // ── Convergence chart ────────────────────────────────────────────────────────
 
