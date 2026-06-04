@@ -546,6 +546,214 @@
       .context-header, .context-card { transition: none; opacity: 1; transform: none; }
     }
 
+    /* ════════════════════════════ CONVERGENCE SECTION ═══════════════════════ */
+
+    #convergence-section {
+      max-width: none;
+      margin: 0;
+      padding: 56px 0 72px;
+      border-top: 1px solid #2c2c2e;
+    }
+
+    #conv-header {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 32px;
+      align-items: center;
+      
+    }
+    #convergence-section h2 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    #convergence-section .section-subtitle {
+      font-size: 14px;
+      margin-top: 6px;
+    }
+
+    #conv-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 22px 44px;
+      margin-top: 22px;
+      padding: 18px 0;
+      border-top: 1px solid #2c2c2e;
+      border-bottom: 1px solid #2c2c2e;
+    }
+    .conv-stat-num {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.6px;
+      color: #f2f2f7;
+      line-height: 1;
+    }
+    .conv-stat-lbl {
+      font-size: 12px;
+      color: #8e8e93;
+      margin-top: 6px;
+      letter-spacing: 0.2px;
+    }
+
+    #conv-legend {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 24px;
+      margin-top: 18px;
+      padding: 12px 32px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #ebebf0;
+      background: rgba(28,28,30,0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid #2c2c2e;
+    }
+    .conv-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .conv-legend-can {
+      width: 14px;
+      height: 24px;
+      flex-shrink: 0;
+      display: block;
+    }
+
+    #conv-chart {
+      position: relative;
+      margin-top: 24px;
+    }
+
+    .conv-month-block { position: relative; }
+
+    .conv-month-divider {
+      position: sticky;
+      top: 54px;
+      z-index: 0;
+      margin: 0;
+      padding: 0 32px;
+      height: 88px;
+      overflow: visible;
+      font-family: 'Georgia', 'Times New Roman', 'Times', serif;
+      font-style: italic;
+      font-size: 96px;
+      font-weight: 400;
+      letter-spacing: 0;
+      color: rgba(242,242,247,0.18);
+      text-transform: none;
+      line-height: 1;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .conv-month-divider + .conv-row { margin-top: -96px; }
+    .conv-month-divider .yr {
+      color: rgba(90,90,94,0.45);
+      font-weight: 400;
+      margin-left: 14px;
+    }
+
+    .conv-row {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      column-gap: 18px;
+      align-items: flex-start;
+      padding: 1px 8px 1px 32px;
+      min-height: 26px;
+    }
+
+    .conv-day {
+      font-size: 19px;
+      font-weight: 700;
+      color: #d1d1d6;
+      letter-spacing: -0.3px;
+      line-height: 24px;
+      font-variant-numeric: tabular-nums;
+    }
+    .conv-day.is-empty { color: #3a3a3c; font-weight: 600; }
+
+    .conv-row-body {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      min-width: 0;
+      min-height: 24px;
+    }
+    .conv-event {
+      flex-shrink: 0;
+      font-size: 13px;
+      font-weight: 700;
+      color: #a785f0;
+      letter-spacing: 0.4px;
+      line-height: 24px;
+      text-transform: uppercase;
+    }
+    .conv-cluster {
+      flex: 1;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      align-items: flex-end;
+      gap: 3px;
+      min-width: 0;
+    }
+    .conv-can {
+      width: 14px;
+      height: 24px;
+      flex-shrink: 0;
+      display: block;
+    }
+
+    .conv-finale-note {
+      max-width: 1100px;
+      margin: 28px auto 0;
+      padding: 20px 24px;
+      border-radius: 8px;
+      background: #232333;
+      font-size: 14px;
+      color: #d1d1d6;
+      line-height: 1.55;
+      border-left: 3px solid #a785f0;
+    }
+    .conv-finale-note strong { color: #f2f2f7; font-weight: 700; }
+    .conv-finale-note-wrap {
+      padding: 0 32px;
+    }
+
+    @media (max-width: 600px) {
+      #convergence-section { padding: 40px 0 56px; }
+      #conv-header { padding: 0 18px; }
+      #convergence-section h2 { font-size: 22px; }
+      #convergence-section .section-subtitle { font-size: 12px; }
+      #conv-legend { padding: 10px 18px; font-size: 12px; gap: 8px 16px; }
+      .conv-legend-can { width: 12px; height: 20px; }
+      .conv-month-divider { top: 44px; font-size: 64px; height: 64px; margin: 0; padding: 0 18px; letter-spacing: 0; }
+      .conv-month-divider + .conv-row { margin-top: -64px; }
+      .conv-row { grid-template-columns: 38px 1fr; column-gap: 12px; padding: 1px 6px 1px 18px; min-height: 22px; }
+      .conv-day { font-size: 14px; line-height: 19px; }
+      .conv-event { font-size: 11px; line-height: 19px; }
+      .conv-can { width: 11px; height: 19px; }
+      .conv-row-body { gap: 10px; min-height: 19px; }
+      .conv-stat-num { font-size: 22px; }
+      #conv-stats { gap: 18px 26px; padding: 14px 0; }
+      .conv-finale-note-wrap { padding: 0 18px; }
+      .conv-finale-note { padding: 16px 18px; font-size: 13px; }
+    }
+
+    /* legend wraps to 2 rows on small phones — push month sticky below it */
+    @media (max-width: 540px) {
+      .conv-month-divider { top: 76px; }
+    }
+    @media (max-width: 380px) {
+      .conv-month-divider { top: 104px; }
+    }
+
     /* ════════════════════════════ BUMP SECTION ════════════════════════════ */
 
     #bump-section {
@@ -741,6 +949,12 @@
     </div>
     <div class="context-columns"></div>
   </div>
+</section>
+
+<!-- ══════════════════════════════════ CONVERGENCE ══════════════════════════ -->
+<section id="convergence-section">
+  <div id="conv-legend"></div>
+  <div id="conv-chart"></div>
 </section>
 
 <!-- ══════════════════════════════════ BUMP ══════════════════════════════════ -->
@@ -1553,7 +1767,125 @@ requestAnimationFrame(tick)
 renderCans()
 renderDuoMoments()
 renderContexts()
+renderConvergence()
 renderBump()
+
+// ── Convergence chart ────────────────────────────────────────────────────────
+
+function renderConvergence() {
+  const START = '2025-05-18'
+  const TYPES = ['Beer','Cocktail','Shot','Wine','Cider','Seltzer','Other']
+  const DAYS = [[1,3,0,1,10,0,1],[1,0,0,0,0,0,0],[0,0,0,0,0,0,0],[11,5,4,2,1,2,0],[3,11,1,3,7,0,0],[4,2,0,1,0,0,3],[7,2,0,3,1,0,0],[13,6,1,1,4,0,0],[1,2,0,1,0,0,0],[8,4,0,0,0,0,1],[9,4,3,1,0,0,1],[17,16,3,7,6,0,4],[3,3,3,4,0,0,5],[0,4,0,0,0,1,4],[7,3,0,0,0,1,0],[12,1,0,2,0,0,2],[7,1,0,0,0,0,2],[0,4,5,0,0,0,1],[10,13,8,0,0,0,0],[20,3,0,0,0,0,4],[2,2,0,0,0,0,10],[8,1,0,1,0,0,1],[4,2,0,0,0,0,2],[4,1,0,0,0,0,6],[13,6,0,5,0,0,5],[6,10,1,2,0,0,0],[2,2,0,12,0,0,0],[27,15,57,0,0,0,9],[5,6,0,8,0,0,6],[7,1,0,0,1,0,0],[1,0,0,0,1,0,5],[6,9,0,1,0,0,0],[19,9,2,2,5,0,0],[16,6,6,3,0,0,0],[19,12,6,4,0,0,6],[7,14,1,2,0,0,0],[10,5,5,0,0,0,1],[7,5,0,1,0,0,0],[2,15,6,2,2,0,2],[4,0,5,2,2,2,0],[8,3,0,0,2,2,0],[15,6,0,3,6,0,0],[4,5,0,0,0,0,0],[2,1,0,3,0,0,0],[4,4,0,0,0,0,0],[6,10,0,1,0,0,0],[10,7,0,2,2,0,0],[17,12,4,0,1,1,0],[6,4,4,1,3,1,0],[8,0,0,0,3,0,0],[3,0,0,0,3,0,0],[3,2,0,5,1,0,0],[5,0,0,1,1,1,0],[0,0,0,1,2,0,0],[4,6,2,6,0,0,0],[20,11,5,2,1,0,1],[14,0,0,5,0,2,0],[3,3,0,0,0,0,0],[3,6,0,3,1,0,1],[11,3,0,0,1,0,0],[9,4,5,5,1,0,0],[13,7,10,4,0,3,5],[14,7,2,4,1,0,0],[50,3,5,1,0,0,0],[10,1,1,1,0,1,0],[3,5,0,0,2,0,0],[13,2,3,1,1,0,0],[6,4,0,0,0,0,0],[0,0,0,0,0,0,0],[14,11,2,0,6,2,0],[27,2,0,0,1,2,0],[4,0,0,0,0,0,0],[6,0,0,11,2,1,0],[1,1,0,8,1,0,0],[10,1,0,0,0,0,0],[10,2,4,2,0,0,0],[26,8,0,7,1,2,0],[13,0,2,3,1,0,0],[17,2,0,1,0,0,0],[5,0,0,1,0,0,0],[9,1,0,5,1,0,0],[3,0,0,2,0,0,0],[17,7,12,0,0,1,2],[3,2,0,1,13,0,0],[10,0,0,2,1,0,0],[4,5,0,4,0,0,0],[0,2,0,2,0,0,0],[2,3,0,0,0,0,0],[10,4,0,3,1,0,0],[12,6,1,1,4,0,7],[26,10,8,2,10,0,2],[11,2,2,0,0,0,4],[1,1,0,1,0,0,0],[1,2,0,2,1,0,0],[6,0,0,1,0,0,0],[4,2,0,2,0,0,0],[15,2,0,2,4,0,0],[7,2,0,0,2,0,0],[7,5,0,1,2,1,0],[4,0,0,0,1,0,0],[3,0,0,5,0,0,0],[6,0,0,1,1,0,0],[5,4,0,0,2,0,3],[23,1,0,0,1,0,2],[15,6,14,0,5,1,2],[3,4,0,1,3,1,0],[8,2,0,8,2,0,0],[3,0,0,0,0,0,0],[8,0,0,0,0,0,0],[1,2,0,1,2,0,0],[11,2,0,1,5,0,0],[7,6,1,1,2,0,0],[4,12,0,3,0,0,0],[3,1,0,0,0,0,0],[3,1,0,0,0,0,0],[3,0,0,0,9,0,0],[5,1,0,5,1,1,0],[18,7,1,17,1,0,6],[28,10,23,1,8,1,3],[15,4,1,0,0,0,0],[3,0,0,2,0,0,0],[1,0,0,2,1,2,0],[7,0,0,2,0,0,0],[6,1,1,7,0,0,1],[6,1,0,1,1,0,0],[14,8,1,5,2,2,0],[3,0,0,1,0,2,0],[0,0,0,0,0,1,0],[2,0,0,0,0,0,0],[2,0,0,2,0,0,0],[2,0,0,0,0,1,0],[4,0,1,0,0,0,0],[10,0,0,0,4,0,0],[2,0,1,0,0,0,0],[8,0,0,0,2,0,0],[6,0,0,1,4,0,0],[2,2,0,1,0,0,0],[4,0,0,0,1,0,0],[2,1,0,0,2,0,0],[13,6,3,0,1,0,1],[4,0,0,1,0,0,0],[4,0,0,0,0,0,0],[6,2,1,1,0,0,0],[3,0,0,0,3,0,0],[2,2,1,0,0,0,0],[40,1,8,3,0,2,0],[29,11,11,9,0,0,0],[11,0,6,0,1,0,0],[4,2,0,1,0,0,0],[2,0,0,0,0,0,0],[3,0,2,2,0,0,0],[1,0,0,1,0,0,0],[3,0,3,4,0,0,0],[5,2,1,3,4,1,0],[8,1,1,1,0,0,0],[3,1,1,1,0,0,1],[9,2,1,2,0,0,0],[4,0,0,1,0,0,0],[0,0,0,0,0,0,0],[9,1,5,1,4,0,0],[6,0,6,1,12,0,0],[5,0,0,0,0,0,0],[1,0,0,0,0,0,0],[2,0,0,0,0,0,0],[1,1,0,0,7,0,0],[2,1,0,3,1,0,1],[23,1,21,2,1,4,2],[16,0,0,2,6,0,0],[10,0,0,1,0,0,0],[6,0,0,0,0,0,0],[7,1,0,0,0,0,0],[2,1,0,0,0,0,0],[2,0,0,1,0,0,0],[4,1,0,8,0,0,0],[6,2,2,0,0,0,0],[5,1,1,2,0,0,0],[10,0,0,0,0,0,0],[6,0,0,7,0,0,0],[14,0,1,1,3,0,0],[0,0,0,0,0,0,0],[14,8,1,4,0,0,0],[6,3,1,0,0,0,0],[3,0,1,2,1,0,0],[5,0,0,0,1,0,0],[6,0,0,1,3,0,0],[3,1,0,1,0,0,0],[2,0,0,0,0,0,0],[10,5,6,0,2,1,1],[3,2,3,4,0,0,0],[8,4,0,0,0,0,1],[1,9,0,0,0,0,0],[8,11,0,2,1,0,0],[2,0,0,3,0,0,0],[14,1,1,5,5,0,0],[0,1,0,0,0,0,0],[3,0,1,2,0,0,0],[3,3,0,2,0,0,0],[9,1,0,0,0,0,0],[1,1,2,0,0,0,0],[7,0,0,2,0,0,0],[0,0,0,0,0,0,0],[8,1,9,2,0,0,0],[6,10,6,0,0,0,3],[0,0,0,0,0,0,0],[1,4,0,0,1,0,0],[0,0,0,0,0,0,0],[9,0,1,0,0,0,0],[0,0,0,2,0,0,0],[7,4,1,1,0,0,0],[12,7,5,0,1,2,0],[3,4,2,1,0,3,0],[0,1,0,3,2,0,0],[0,0,0,3,0,0,0],[0,0,0,0,1,0,0],[0,0,1,0,1,0,0],[15,7,28,7,0,1,0],[3,1,0,4,0,0,0],[4,0,0,3,0,0,0],[0,0,0,0,0,0,0],[1,0,0,1,0,0,0],[8,1,1,2,0,0,0],[2,2,0,1,0,0,0],[0,0,0,0,0,0,0],[5,0,0,0,0,0,0],[25,3,0,4,6,0,0],[5,2,9,2,2,7,0],[9,15,15,2,1,2,0],[0,11,3,10,0,0,0],[1,0,0,3,0,0,0],[0,1,2,0,1,0,0],[0,1,0,0,0,0,0],[2,2,0,0,0,0,0],[0,6,0,0,0,0,0],[0,0,0,0,0,2,0],[4,0,0,0,0,0,0],[1,0,0,0,0,0,0],[1,1,0,0,0,0,0],[1,9,0,0,3,1,0],[0,2,0,0,0,0,0],[0,0,0,0,0,0,0],[0,0,0,0,0,0,0],[1,1,0,0,0,0,0],[0,0,0,0,0,0,0],[0,1,1,0,1,0,0],[9,3,4,5,2,0,0],[9,0,0,0,0,0,0],[0,0,0,0,2,0,0],[3,0,0,0,0,0,0],[5,0,2,0,0,1,0],[6,1,1,0,0,0,0],[7,6,2,1,1,0,0],[8,2,0,1,0,0,0],[0,0,0,0,0,0,0],[6,2,0,0,0,0,1],[2,0,1,3,0,0,0],[5,0,0,0,0,0,0],[2,3,0,0,0,0,0],[9,4,5,4,2,1,1],[6,4,0,0,0,0,0],[4,0,3,0,2,0,0],[1,0,0,1,0,0,0],[0,1,0,0,0,0,0],[1,2,0,0,0,0,0],[3,3,0,2,0,0,0],[1,0,1,1,0,0,0],[2,2,0,1,3,0,0],[21,0,0,0,5,0,0],[1,9,0,0,0,0,0],[0,0,0,0,0,0,0],[0,0,0,0,0,0,0],[1,1,0,0,3,0,0],[2,1,0,0,1,0,0],[2,3,1,0,0,0,0],[7,5,0,1,0,0,0],[7,1,0,2,0,0,0],[1,1,0,0,0,0,0],[1,1,1,1,0,0,0],[8,3,1,1,0,0,0],[19,1,1,0,0,0,0],[19,6,0,0,1,0,0],[1,1,0,1,0,0,0],[2,0,0,5,5,0,0],[9,4,1,0,1,0,0],[3,2,0,0,1,0,0],[5,0,0,1,0,0,0],[11,0,0,1,2,0,0],[15,6,0,6,1,0,0],[1,0,0,0,0,0,0],[1,1,0,1,0,0,0],[1,1,0,2,0,0,0],[4,0,0,0,2,0,0],[3,1,0,0,0,0,0],[1,2,2,1,0,0,0],[2,1,0,0,0,0,0],[5,0,0,0,0,0,0],[5,0,0,0,0,0,0],[4,0,0,0,0,0,0],[1,0,0,2,0,1,0],[6,1,1,2,0,0,0],[9,11,4,0,0,0,2],[10,10,3,0,0,1,0],[6,1,0,7,2,0,0],[5,0,1,0,0,0,0],[2,1,0,0,0,0,0],[2,1,0,0,0,0,0],[4,2,4,3,0,0,0],[3,10,4,0,0,0,0],[8,9,8,1,2,0,0],[6,2,1,1,0,0,0],[0,2,1,3,0,0,0],[0,0,0,0,0,0,0],[6,0,0,0,0,0,0],[0,3,1,0,0,0,0],[12,4,4,0,1,0,0],[12,0,0,1,0,1,1],[5,2,0,0,1,0,0],[4,2,0,0,0,0,0],[7,3,0,3,0,0,0],[2,3,0,0,0,0,0],[3,3,0,0,0,0,0],[11,13,8,5,0,0,0],[6,5,0,0,0,0,1],[1,0,0,0,0,0,0],[0,0,0,1,1,0,0],[0,0,0,0,0,0,0],[3,1,0,0,1,0,2],[2,4,1,0,0,0,0],[13,14,4,2,0,0,2],[16,3,2,0,0,1,1],[2,2,0,0,0,0,0],[0,0,0,0,0,0,0],[1,1,0,0,0,0,0],[0,1,1,0,0,0,0],[2,1,2,0,2,0,0],[9,2,0,0,0,0,0],[7,0,9,0,1,0,0],[7,1,0,0,0,0,0],[13,4,0,0,0,0,1],[1,0,0,0,0,0,0],[4,0,0,0,0,0,0],[5,1,0,0,0,0,1],[25,1,1,0,1,0,1],[19,17,0,1,0,0,0],[2,3,0,3,0,0,0],[0,0,0,0,1,0,0],[2,1,0,0,0,0,0],[0,0,0,0,0,0,0],[1,3,0,0,0,0,0],[1,4,3,0,0,0,0],[10,7,0,1,0,1,0],[2,3,2,0,0,0,0],[0,0,0,0,0,0,0],[5,3,0,0,1,0,0],[3,1,0,1,0,0,0],[3,0,0,0,0,0,0],[5,0,0,0,2,0,0],[16,7,4,0,0,0,0],[1,0,0,1,0,0,0],[6,0,0,0,0,0,0],[5,3,0,2,0,3,0],[6,4,1,0,0,0,1],[0,0,0,0,0,0,0],[9,19,10,6,1,0,0],[9,2,0,0,0,0,0],[5,0,0,2,0,0,0],[4,8,0,0,1,0,0],[2,6,0,0,0,0,0],[3,0,0,0,0,0,0],[19,1,8,0,0,0,3],[50,1,7,0,2,0,2],[56,5,2,0,0,0,6],[53,9,15,0,0,0,6],[1,2,0,1,2,0,1],[0,0,0,0,0,0,0],[5,1,0,0,2,0,0]]
+
+  const TYPE_COLOR = {
+    Beer:     '#f3d2a1',
+    Cocktail: '#aacae8',
+    Shot:     '#f0beb9',
+    Wine:     '#d2b9e3',
+    Cider:    '#a7d6b9',
+    Seltzer:  '#a6dbdb',
+    Other:    '#ccc9c4',
+  }
+
+  const ANN = {
+    0:   'Kickoff weekend',
+    27:  'Shanghai trip',
+    80:  'Summer reunion',
+    118: 'Labor Day BBQ',
+    146: 'Poker / NC trip',
+    166: 'Halloween',
+    224: 'Ski trip',
+    285: "Hannah's bday",
+    371: 'Reunion — all twelve',
+  }
+
+  let totalDrinks = 0
+  let peakDay = 0
+  for (const day of DAYS) {
+    let s = 0
+    for (const n of day) s += n
+    totalDrinks += s
+    if (s > peakDay) peakDay = s
+  }
+
+  const legendEl = document.getElementById('conv-legend')
+  legendEl.innerHTML = TYPES.map(t => `
+    <div class="conv-legend-item">
+      <svg class="conv-legend-can" viewBox="0 0 195 350" style="color:${TYPE_COLOR[t]}"><use href="#can-shape"/></svg>
+      ${t}
+    </div>
+  `).join('')
+
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const chartEl = document.getElementById('conv-chart')
+  const frag = document.createDocumentFragment()
+
+  const startD = new Date(START + 'T00:00:00')
+  let lastMonth = -1
+  let monthBlock = null
+  const SVG_NS = 'http://www.w3.org/2000/svg'
+
+  DAYS.forEach((counts, i) => {
+    const d = new Date(startD); d.setDate(d.getDate() + i)
+    const m = d.getMonth(), day = d.getDate(), yr = d.getFullYear()
+    const total = counts.reduce((a, b) => a + b, 0)
+
+    if (m !== lastMonth) {
+      monthBlock = document.createElement('div')
+      monthBlock.className = 'conv-month-block'
+      const div = document.createElement('div')
+      div.className = 'conv-month-divider'
+      div.innerHTML = `${months[m]}<span class="yr">'${String(yr).slice(-2)}</span>`
+      monthBlock.appendChild(div)
+      frag.appendChild(monthBlock)
+      lastMonth = m
+    }
+
+    const row = document.createElement('div')
+    row.className = 'conv-row'
+
+    const dayEl = document.createElement('div')
+    dayEl.className = 'conv-day' + (total === 0 ? ' is-empty' : '')
+    dayEl.textContent = day
+
+    const body = document.createElement('div')
+    body.className = 'conv-row-body'
+
+    if (ANN[i]) {
+      const lbl = document.createElement('div')
+      lbl.className = 'conv-event'
+      lbl.textContent = ANN[i]
+      body.appendChild(lbl)
+    }
+
+    const cluster = document.createElement('div')
+    cluster.className = 'conv-cluster'
+    if (total) cluster.title = `${d.toISOString().slice(0,10)} — ${total} drink${total===1?'':'s'}`
+
+    for (let ti = 0; ti < TYPES.length; ti++) {
+      const n = counts[ti]
+      if (!n) continue
+      const color = TYPE_COLOR[TYPES[ti]]
+      for (let k = 0; k < n; k++) {
+        const svg = document.createElementNS(SVG_NS, 'svg')
+        svg.setAttribute('class', 'conv-can')
+        svg.setAttribute('viewBox', '0 0 195 350')
+        svg.style.color = color
+        const use = document.createElementNS(SVG_NS, 'use')
+        use.setAttribute('href', '#can-shape')
+        svg.appendChild(use)
+        cluster.appendChild(svg)
+      }
+    }
+
+    body.appendChild(cluster)
+    row.appendChild(dayEl)
+    row.appendChild(body)
+    monthBlock.appendChild(row)
+  })
+
+  chartEl.appendChild(frag)
+}
 </script>
 </body>
 </html>
