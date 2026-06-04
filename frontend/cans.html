@@ -416,69 +416,101 @@
     /* ════════════════════════════ CONTEXTS SECTION ════════════════════════════ */
 
     #contexts-section {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 52px 24px 24px;
       border-top: 1px solid #2c2c2e;
-    }
-
-    #contexts-section h2 {
-      font-size: 24px;
-      font-weight: 700;
-      letter-spacing: -0.4px;
+      padding-top: 64px;
     }
 
     .context-block {
-      margin-top: 44px;
+      position: relative;
+      padding-bottom: 6vh;
     }
 
+    .context-header {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      padding: 14vh 24px 30px;
+      max-width: 1200px;
+      margin: 0 auto;
+      background: transparent;
+      text-align: center;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(-10px);
+      transition: opacity 0.9s ease, transform 0.9s ease;
+    }
+    .context-header.is-visible {
+      opacity: 1;
+      transform: none;
+    }
+    .context-header > * { pointer-events: auto; }
+
     .context-heading {
-      font-size: clamp(40px, 7vw, 76px);
-      font-weight: 900;
-      letter-spacing: -1.5px;
+      font-size: clamp(40px, 6.5vw, 96px);
+      font-weight: 400;
+      letter-spacing: 1px;
       line-height: 1;
       text-transform: uppercase;
       color: #f2f2f7;
-      margin-bottom: 4px;
+      margin: 0;
+      white-space: nowrap;
     }
 
     .context-sub {
-      font-size: 13px;
+      font-size: 12px;
       color: #8e8e93;
-      margin-bottom: 18px;
+      margin: 8px auto 0;
+      letter-spacing: 0.3px;
+      max-width: 520px;
     }
 
-    .context-scroll {
-      display: flex;
-      gap: 18px;
-      overflow-x: auto;
-      overflow-y: hidden;
-      padding: 8px 24px 24px 0;
-      margin: 0 -24px;
-      padding-left: 24px;
-      scroll-snap-type: x proximity;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: thin;
-      scrollbar-color: #3a3a3c transparent;
+    .context-columns {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 36px;
+      max-width: 1200px;
+      margin: 6vh auto 0;
+      padding: 0 24px 0;
+      position: relative;
+      z-index: 5;
+      align-items: start;
     }
-    .context-scroll::-webkit-scrollbar { height: 8px; }
-    .context-scroll::-webkit-scrollbar-track { background: transparent; }
-    .context-scroll::-webkit-scrollbar-thumb { background: #3a3a3c; border-radius: 4px; }
+
+    .context-col {
+      display: flex;
+      flex-direction: column;
+      gap: 80px;
+    }
+    .context-col:nth-child(1) { padding-top: 0; }
+    .context-col:nth-child(2) { padding-top: 200px; }
+    .context-col:nth-child(3) { padding-top: 90px; }
 
     .context-card {
-      flex: 0 0 auto;
-      width: 260px;
-      scroll-snap-align: start;
+      display: block;
+      padding: 0 clamp(10px, 1.4vw, 22px);
+      box-sizing: border-box;
+      opacity: 0;
+      transform: translateY(40px);
+      transition: opacity 0.8s ease, transform 0.8s ease;
+    }
+    .context-card.is-revealed {
+      opacity: 1;
+      transform: none;
     }
 
     .context-card .context-media-wrap {
       position: relative;
       width: 100%;
       aspect-ratio: 3 / 4;
-      border-radius: 6px;
+      border-radius: 4px;
       overflow: hidden;
       background: #2c2c2e;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.45);
     }
+
+    .context-card.is-square .context-media-wrap   { aspect-ratio: 1 / 1; }
+    .context-card.is-tall   .context-media-wrap   { aspect-ratio: 3 / 5; }
+    .context-card.is-wide   .context-media-wrap   { aspect-ratio: 4 / 5; }
 
     .context-card .context-media {
       position: absolute;
@@ -492,14 +524,26 @@
     .context-card .context-caption {
       font-size: 11px;
       color: #8e8e93;
-      margin-top: 8px;
-      letter-spacing: 0.2px;
+      margin-top: 10px;
+      letter-spacing: 0.3px;
+      font-style: italic;
     }
 
-    @media (max-width: 600px) {
-      #contexts-section { padding: 40px 16px 16px; }
-      .context-scroll { margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
-      .context-card { width: 200px; }
+    @media (max-width: 720px) {
+      #contexts-section { padding-top: 40px; }
+      .context-block { padding-bottom: 4vh; }
+      .context-header { padding: 10vh 16px 30px; }
+      .context-heading { white-space: normal; font-size: clamp(30px, 8vw, 56px); }
+      .context-columns { grid-template-columns: repeat(2, 1fr); gap: 24px; margin-top: 4vh; padding: 0 16px 0; }
+      .context-col { gap: 48px; }
+      .context-col:nth-child(1) { padding-top: 0; }
+      .context-col:nth-child(2) { padding-top: 90px; }
+      .context-col:nth-child(3) { padding-top: 0; grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; gap: 24px; }
+      .context-col:nth-child(3) .context-card { flex: 1 1 calc(50% - 12px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .context-header, .context-card { transition: none; opacity: 1; transform: none; }
     }
 
     /* ════════════════════════════ BUMP SECTION ════════════════════════════ */
@@ -674,25 +718,28 @@
 
 <!-- ══════════════════════════════════ CONTEXTS ══════════════════════════════════ -->
 <section id="contexts-section">
-  <h2>Whenever, wherever</h2>
-  <p class="section-subtitle">A drink finds a way &mdash; in the shower, mid-flight, mid-shift.</p>
-
   <div class="context-block" data-context="shower">
-    <div class="context-heading">Shower beer</div>
-    <p class="context-sub">Hot water, cold can.</p>
-    <div class="context-scroll"></div>
+    <div class="context-header">
+      <h3 class="context-heading">8 Shower Beers</h3>
+      <p class="context-sub">Hot water, cold can. The original two-handed reset button.</p>
+    </div>
+    <div class="context-columns"></div>
   </div>
 
   <div class="context-block" data-context="airplane">
-    <div class="context-heading">In transit</div>
-    <p class="context-sub">30,000 feet, two-drink minimum.</p>
-    <div class="context-scroll"></div>
+    <div class="context-header">
+      <h3 class="context-heading">6 Modes of Travel</h3>
+      <p class="context-sub">Might've missed some, lmk</p>
+    </div>
+    <div class="context-columns"></div>
   </div>
 
   <div class="context-block" data-context="work">
-    <div class="context-heading">On the clock</div>
-    <p class="context-sub">Work drinks &mdash; technically still billable.</p>
-    <div class="context-scroll"></div>
+    <div class="context-header">
+      <h3 class="context-heading">9 On the Clock</h3>
+      <p class="context-sub">Work drinks &mdash; technically still billable.</p>
+    </div>
+    <div class="context-columns"></div>
   </div>
 </section>
 
@@ -1229,24 +1276,39 @@ function renderDuoMoments() {
 
 const CONTEXTS = {
   shower:   ['36004.jpg','39942.jpg','40379.jpg','40442.jpg','42726.jpg','45365.jpg','45461.jpg','36971.mov'],
-  airplane: ['234675.jpg','234749.jpg','39630.jpg','42983.jpg','42994.jpg','44949.jpeg'],
+  airplane: ['234675.jpg','234749.jpg','42983.jpg','42994.jpg','44949.jpeg','IMG_0876.jpg','IMG_3119.mov','screenshot_extra.png'],
   work:     ['35479.jpg','36175.jpg','36473.jpg','37293.jpg','38670.jpg','38705.jpg','38955.jpg','38976.jpg','42889.mov'],
 }
 
 function renderContexts() {
+  const SHAPE_CYCLE = ['', 'is-square', 'is-tall', 'is-wide', '', 'is-tall']
+  const NCOLS = 3
+
   document.querySelectorAll('.context-block[data-context]').forEach(block => {
     const key = block.dataset.context
     const files = CONTEXTS[key] || []
-    const scroll = block.querySelector('.context-scroll')
+    const host = block.querySelector('.context-columns')
+
+    const cols = []
+    for (let c = 0; c < NCOLS; c++) {
+      const col = document.createElement('div')
+      col.className = 'context-col'
+      host.appendChild(col)
+      cols.push(col)
+    }
+
     files.forEach((file, i) => {
       const isVideo = /\.(mov|mp4|webm)$/i.test(file)
       const card = document.createElement('div')
-      card.className = 'context-card'
+      const shape = SHAPE_CYCLE[i % SHAPE_CYCLE.length]
+      card.className = 'context-card' + (shape ? ' ' + shape : '')
+
       const wrap = document.createElement('div')
       wrap.className = 'context-media-wrap'
+
       const media = document.createElement(isVideo ? 'video' : 'img')
       media.className = 'context-media'
-      media.src = `contexts/${key}/${file}`
+      media.src = `contexts/${key}/${encodeURIComponent(file)}`
       if (isVideo) {
         media.autoplay = true
         media.loop = true
@@ -1258,14 +1320,41 @@ function renderContexts() {
         media.alt = `${key} #${i + 1}`
       }
       wrap.appendChild(media)
+
       const caption = document.createElement('div')
       caption.className = 'context-caption'
       caption.textContent = `${String(i + 1).padStart(2, '0')} / ${String(files.length).padStart(2, '0')}`
+
       card.appendChild(wrap)
       card.appendChild(caption)
-      scroll.appendChild(card)
+      cols[i % NCOLS].appendChild(card)
     })
   })
+
+  if (typeof IntersectionObserver === 'undefined') {
+    document.querySelectorAll('.context-header').forEach(el => el.classList.add('is-visible'))
+    document.querySelectorAll('.context-card').forEach(el => el.classList.add('is-revealed'))
+    return
+  }
+
+  const headerObs = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      const header = e.target.querySelector('.context-header')
+      if (!header) continue
+      if (e.isIntersecting) header.classList.add('is-visible')
+    }
+  }, { threshold: 0, rootMargin: '0px 0px -20% 0px' })
+  document.querySelectorAll('.context-block').forEach(b => headerObs.observe(b))
+
+  const cardObs = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting) {
+        e.target.classList.add('is-revealed')
+        cardObs.unobserve(e.target)
+      }
+    }
+  }, { threshold: 0.15, rootMargin: '0px 0px -10% 0px' })
+  document.querySelectorAll('.context-card').forEach(c => cardObs.observe(c))
 }
 
 // ── Bump chart ───────────────────────────────────────────────────────────────
