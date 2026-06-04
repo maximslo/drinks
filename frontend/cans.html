@@ -413,6 +413,95 @@
       .duo-avatar { width: 88px; height: 88px; }
     }
 
+    /* ════════════════════════════ CONTEXTS SECTION ════════════════════════════ */
+
+    #contexts-section {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 52px 24px 24px;
+      border-top: 1px solid #2c2c2e;
+    }
+
+    #contexts-section h2 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+    }
+
+    .context-block {
+      margin-top: 44px;
+    }
+
+    .context-heading {
+      font-size: clamp(40px, 7vw, 76px);
+      font-weight: 900;
+      letter-spacing: -1.5px;
+      line-height: 1;
+      text-transform: uppercase;
+      color: #f2f2f7;
+      margin-bottom: 4px;
+    }
+
+    .context-sub {
+      font-size: 13px;
+      color: #8e8e93;
+      margin-bottom: 18px;
+    }
+
+    .context-scroll {
+      display: flex;
+      gap: 18px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 8px 24px 24px 0;
+      margin: 0 -24px;
+      padding-left: 24px;
+      scroll-snap-type: x proximity;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      scrollbar-color: #3a3a3c transparent;
+    }
+    .context-scroll::-webkit-scrollbar { height: 8px; }
+    .context-scroll::-webkit-scrollbar-track { background: transparent; }
+    .context-scroll::-webkit-scrollbar-thumb { background: #3a3a3c; border-radius: 4px; }
+
+    .context-card {
+      flex: 0 0 auto;
+      width: 260px;
+      scroll-snap-align: start;
+    }
+
+    .context-card .context-media-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #2c2c2e;
+    }
+
+    .context-card .context-media {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .context-card .context-caption {
+      font-size: 11px;
+      color: #8e8e93;
+      margin-top: 8px;
+      letter-spacing: 0.2px;
+    }
+
+    @media (max-width: 600px) {
+      #contexts-section { padding: 40px 16px 16px; }
+      .context-scroll { margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+      .context-card { width: 200px; }
+    }
+
     /* ════════════════════════════ BUMP SECTION ════════════════════════════ */
 
     #bump-section {
@@ -580,6 +669,30 @@
         <span class="duo-moment-counter"></span>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════ CONTEXTS ══════════════════════════════════ -->
+<section id="contexts-section">
+  <h2>Whenever, wherever</h2>
+  <p class="section-subtitle">A drink finds a way &mdash; in the shower, mid-flight, mid-shift.</p>
+
+  <div class="context-block" data-context="shower">
+    <div class="context-heading">Shower beer</div>
+    <p class="context-sub">Hot water, cold can.</p>
+    <div class="context-scroll"></div>
+  </div>
+
+  <div class="context-block" data-context="airplane">
+    <div class="context-heading">In transit</div>
+    <p class="context-sub">30,000 feet, two-drink minimum.</p>
+    <div class="context-scroll"></div>
+  </div>
+
+  <div class="context-block" data-context="work">
+    <div class="context-heading">On the clock</div>
+    <p class="context-sub">Work drinks &mdash; technically still billable.</p>
+    <div class="context-scroll"></div>
   </div>
 </section>
 
@@ -1112,6 +1225,49 @@ function renderDuoMoments() {
   })
 }
 
+// ── Contexts gallery ─────────────────────────────────────────────────────────
+
+const CONTEXTS = {
+  shower:   ['36004.jpg','39942.jpg','40379.jpg','40442.jpg','42726.jpg','45365.jpg','45461.jpg','36971.mov'],
+  airplane: ['234675.jpg','234749.jpg','39630.jpg','42983.jpg','42994.jpg','44949.jpeg'],
+  work:     ['35479.jpg','36175.jpg','36473.jpg','37293.jpg','38670.jpg','38705.jpg','38955.jpg','38976.jpg','42889.mov'],
+}
+
+function renderContexts() {
+  document.querySelectorAll('.context-block[data-context]').forEach(block => {
+    const key = block.dataset.context
+    const files = CONTEXTS[key] || []
+    const scroll = block.querySelector('.context-scroll')
+    files.forEach((file, i) => {
+      const isVideo = /\.(mov|mp4|webm)$/i.test(file)
+      const card = document.createElement('div')
+      card.className = 'context-card'
+      const wrap = document.createElement('div')
+      wrap.className = 'context-media-wrap'
+      const media = document.createElement(isVideo ? 'video' : 'img')
+      media.className = 'context-media'
+      media.src = `contexts/${key}/${file}`
+      if (isVideo) {
+        media.autoplay = true
+        media.loop = true
+        media.muted = true
+        media.playsInline = true
+      } else {
+        media.loading = 'lazy'
+        media.decoding = 'async'
+        media.alt = `${key} #${i + 1}`
+      }
+      wrap.appendChild(media)
+      const caption = document.createElement('div')
+      caption.className = 'context-caption'
+      caption.textContent = `${String(i + 1).padStart(2, '0')} / ${String(files.length).padStart(2, '0')}`
+      card.appendChild(wrap)
+      card.appendChild(caption)
+      scroll.appendChild(card)
+    })
+  })
+}
+
 // ── Bump chart ───────────────────────────────────────────────────────────────
 
 function renderBump() {
@@ -1307,6 +1463,7 @@ init()
 requestAnimationFrame(tick)
 renderCans()
 renderDuoMoments()
+renderContexts()
 renderBump()
 </script>
 </body>
