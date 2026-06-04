@@ -429,8 +429,14 @@
     }
 
     #bump-chart { margin-top: 28px; overflow: visible; }
-    #bump-chart svg { overflow: visible; display: block; }
+    #bump-chart svg { overflow: visible; display: block; max-width: 100%; }
     #bump-chart .avatar-img { filter: grayscale(100%) contrast(1.05); }
+
+    @media (max-width: 600px) {
+      #bump-section { padding: 40px 16px 72px; }
+      #bump-section h2 { font-size: 20px; }
+      #bump-chart { margin-top: 20px; }
+    }
   </style>
 </head>
 <body>
@@ -1120,134 +1126,179 @@ function renderBump() {
   const nPeople = BUMP_PEOPLE.length
 
   const container = document.getElementById('bump-chart')
-  const margin = { top: 16, right: 168, bottom: 50, left: 50 }
-  const W = Math.min(900, container.getBoundingClientRect().width || 900) - margin.left - margin.right
-  const H = 560
-  const slotH = H / (BUMP_PEOPLE.length - 1)  // ~50.9px per slot
-  const AV_R  = Math.floor(slotH / 2) - 1    // avatar half-size fills the slot
 
-  const xSc = d3.scaleLinear([0, nWeeks - 1], [0, W])
-  const ySc = d3.scaleLinear([0, d3.max(weeks[nWeeks - 1].c)], [H, 0]).nice()
-
-  // Equal spacing for avatars — sorted top-to-bottom by final count, evenly distributed
-  const finalData = BUMP_PEOPLE.map((name, pi) => ({
-    name,
-    actualY: ySc(weeks[nWeeks - 1].c[pi])
-  })).sort((a, b) => a.actualY - b.actualY)
-
-  finalData.forEach((d, i) => {
-    d.slotY = (i / (finalData.length - 1)) * H
-  })
-
-  const svg = d3.select(container).append('svg')
-    .attr('width',  W + margin.left + margin.right)
-    .attr('height', H + margin.top  + margin.bottom)
-
-  svg.append('defs')
-
-  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`)
-
-  // Y-axis with horizontal grid lines
-  g.append('g')
-    .call(d3.axisLeft(ySc).ticks(5).tickSize(-W).tickFormat(d => d))
-    .call(ax => ax.select('.domain').remove())
-    .call(ax => ax.selectAll('.tick line').attr('stroke', '#242426'))
-    .call(ax => ax.selectAll('.tick text').attr('fill', '#3a3a3c').style('font-size', '10px').attr('x', -8))
-
-  // Month labels along bottom
-  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  let prevMonth = -1
-  weeks.forEach((wk, i) => {
-    const m = parseInt(wk.w.slice(5, 7)) - 1
-    if (m !== prevMonth) {
-      g.append('text')
-        .attr('x', xSc(i)).attr('y', H + 22)
-        .attr('text-anchor', 'middle')
-        .attr('fill', '#3a3a3c').style('font-size', '10px')
-        .text(monthNames[m])
-      prevMonth = m
+  // Layout snapshot for the current breakpoint. The SVG itself uses a viewBox,
+  // so the browser scales it smoothly during resize — we only do a real redraw
+  // when the breakpoint flips (mobile ↔ desktop).
+  function layoutFor(mode) {
+    const isMobile = mode === 'mobile'
+    const labelW = isMobile ? 56 : 76
+    const avatarPad = isMobile ? 8 : 12
+    const margin = {
+      top: 16,
+      right: (isMobile ? 36 : 48) + labelW + avatarPad,
+      bottom: 44,
+      left: isMobile ? 34 : 50,
     }
-  })
+    const W = isMobile ? 560 : 700
+    const H = isMobile ? 420 : 560
+    return { isMobile, labelW, avatarPad, margin, W, H }
+  }
 
-  // One path per person using cumulative counts
-  const lineGen = d3.line()
-    .x((_, i) => xSc(i))
-    .y(d => ySc(d))
-    .curve(d3.curveStepAfter)
+  let currentMode = null
 
-  const paths = []
-  BUMP_PEOPLE.forEach((name, pi) => {
-    const series = weeks.map(wk => wk.c[pi])
-    const path = g.append('path')
-      .datum(series)
-      .attr('d', lineGen)
-      .attr('fill', 'none')
-      .attr('stroke', personColor(name))
-      .attr('stroke-width', 2.5)
-      .attr('stroke-linecap', 'square')
-      .attr('stroke-linejoin', 'miter')
-      .attr('opacity', 0.82)
-      .style('cursor', 'pointer')
-    paths.push({ name, path })
-  })
+  function draw() {
+    const containerW = container.getBoundingClientRect().width || 900
+    const mode = containerW < 600 ? 'mobile' : 'desktop'
+    if (mode === currentMode) return
+    currentMode = mode
 
-  // Shared highlight used by lines and avatar groups
-  function highlight(activeName) {
-    paths.forEach(p => {
-      p.path.attr('opacity', p.name === activeName ? 1 : 0.08)
-            .attr('stroke-width', p.name === activeName ? 3.5 : 2.5)
+    container.innerHTML = ''
+
+    const { isMobile, labelW, avatarPad, margin, W, H } = layoutFor(mode)
+    const slotH = H / (BUMP_PEOPLE.length - 1)
+    const AV_R = Math.max(10, Math.floor(slotH / 2) - 1)
+    const tickFont = isMobile ? '9px' : '10px'
+    const nameFont = isMobile ? '10px' : '12px'
+
+    const xSc = d3.scaleLinear([0, nWeeks - 1], [0, W])
+    const ySc = d3.scaleLinear([0, d3.max(weeks[nWeeks - 1].c)], [H, 0]).nice()
+
+    const finalData = BUMP_PEOPLE.map((name, pi) => ({
+      name,
+      actualY: ySc(weeks[nWeeks - 1].c[pi])
+    })).sort((a, b) => a.actualY - b.actualY)
+
+    finalData.forEach((d, i) => {
+      d.slotY = (i / (finalData.length - 1)) * H
+    })
+
+    const totalW = W + margin.left + margin.right
+    const totalH = H + margin.top + margin.bottom
+    const svg = d3.select(container).append('svg')
+      .attr('viewBox', `0 0 ${totalW} ${totalH}`)
+      .attr('preserveAspectRatio', 'xMidYMin meet')
+      .attr('width', '100%')
+      .style('height', 'auto')
+
+    svg.append('defs')
+
+    const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`)
+
+    g.append('g')
+      .call(d3.axisLeft(ySc).ticks(isMobile ? 4 : 5).tickSize(-W).tickFormat(d => d))
+      .call(ax => ax.select('.domain').remove())
+      .call(ax => ax.selectAll('.tick line').attr('stroke', '#242426'))
+      .call(ax => ax.selectAll('.tick text').attr('fill', '#3a3a3c').style('font-size', tickFont).attr('x', -8))
+
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    const dates = weeks.map(w => new Date(w.w))
+    const xTime = d3.scaleTime([dates[0], dates[dates.length - 1]], [0, W])
+    const tickInterval = isMobile ? d3.timeMonth.every(2) : d3.timeMonth.every(1)
+    xTime.ticks(tickInterval).forEach(d => {
+      const x = xTime(d)
+      if (x < 0 || x > W) return
+      g.append('text')
+        .attr('x', x).attr('y', H + 18)
+        .attr('text-anchor', 'middle')
+        .attr('fill', '#3a3a3c').style('font-size', tickFont)
+        .text(monthNames[d.getMonth()])
+    })
+
+    const lineGen = d3.line()
+      .x((_, i) => xSc(i))
+      .y(d => ySc(d))
+      .curve(d3.curveStepAfter)
+
+    const paths = []
+    BUMP_PEOPLE.forEach((name, pi) => {
+      const series = weeks.map(wk => wk.c[pi])
+      const path = g.append('path')
+        .datum(series)
+        .attr('d', lineGen)
+        .attr('fill', 'none')
+        .attr('stroke', personColor(name))
+        .attr('stroke-width', isMobile ? 2 : 2.5)
+        .attr('stroke-linecap', 'square')
+        .attr('stroke-linejoin', 'miter')
+        .attr('opacity', 0.82)
+        .style('cursor', 'pointer')
+      paths.push({ name, path })
+    })
+
+    const baseWidth = isMobile ? 2 : 2.5
+    const activeWidth = isMobile ? 3 : 3.5
+    function highlight(activeName) {
+      paths.forEach(p => {
+        p.path.attr('opacity', p.name === activeName ? 1 : 0.08)
+              .attr('stroke-width', p.name === activeName ? activeWidth : baseWidth)
+      })
+    }
+    function unhighlight() {
+      paths.forEach(p => p.path.attr('opacity', 0.82).attr('stroke-width', baseWidth))
+    }
+
+    paths.forEach(({ name, path }) => {
+      path.on('mouseenter', () => highlight(name)).on('mouseleave', unhighlight)
+    })
+
+    const rightX = W + avatarPad + AV_R
+
+    finalData.forEach(({ name, actualY, slotY }) => {
+      g.append('line')
+        .attr('x1', W).attr('y1', actualY)
+        .attr('x2', rightX - AV_R - 3).attr('y2', slotY)
+        .attr('stroke', personColor(name))
+        .attr('stroke-width', 1)
+        .attr('opacity', 0.35)
+
+      const avatarG = g.append('g')
+        .attr('transform', `translate(${rightX},${slotY})`)
+        .style('cursor', 'pointer')
+        .on('mouseenter', () => highlight(name))
+        .on('mouseleave', unhighlight)
+
+      avatarG.append('rect')
+        .attr('x', -AV_R)
+        .attr('y', -slotH / 2)
+        .attr('width', AV_R * 2 + labelW)
+        .attr('height', slotH)
+        .attr('fill', 'transparent')
+
+      avatarG.append('image')
+        .attr('class', 'avatar-img')
+        .attr('href', `avatars/${name.toLowerCase()}_.png`)
+        .attr('x', -AV_R).attr('y', -AV_R)
+        .attr('width', AV_R * 2).attr('height', AV_R * 2)
+        .attr('preserveAspectRatio', 'xMidYMid slice')
+
+      avatarG.append('text')
+        .attr('x', AV_R + 6)
+        .attr('y', 0)
+        .attr('dominant-baseline', 'middle')
+        .attr('fill', personColor(name))
+        .style('font-size', nameFont)
+        .style('font-weight', '600')
+        .text(name)
     })
   }
-  function unhighlight() {
-    paths.forEach(p => p.path.attr('opacity', 0.82).attr('stroke-width', 2.5))
+
+  draw()
+
+  if (typeof ResizeObserver !== 'undefined') {
+    let resizeTimer
+    const ro = new ResizeObserver(() => {
+      clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(draw, 120)
+    })
+    ro.observe(container)
+  } else {
+    let resizeTimer
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(draw, 120)
+    })
   }
-
-  paths.forEach(({ name, path }) => {
-    path.on('mouseenter', () => highlight(name)).on('mouseleave', unhighlight)
-  })
-
-  // Right-edge avatars — equally spaced, connector lines to actual line endpoints
-  const rightX = W + 12 + AV_R
-
-  finalData.forEach(({ name, actualY, slotY }) => {
-    // Connector: from actual line endpoint to avatar slot
-    g.append('line')
-      .attr('x1', W).attr('y1', actualY)
-      .attr('x2', rightX - AV_R - 3).attr('y2', slotY)
-      .attr('stroke', personColor(name))
-      .attr('stroke-width', 1)
-      .attr('opacity', 0.35)
-
-    const avatarG = g.append('g')
-      .attr('transform', `translate(${rightX},${slotY})`)
-      .style('cursor', 'pointer')
-      .on('mouseenter', () => highlight(name))
-      .on('mouseleave', unhighlight)
-
-    // Full-slot transparent hit area — contiguous with adjacent cards, no dead zone
-    avatarG.append('rect')
-      .attr('x', -AV_R)
-      .attr('y', -slotH / 2)
-      .attr('width', AV_R * 2 + 72)
-      .attr('height', slotH)
-      .attr('fill', 'transparent')
-
-    avatarG.append('image')
-      .attr('class', 'avatar-img')
-      .attr('href', `avatars/${name.toLowerCase()}_.png`)
-      .attr('x', -AV_R).attr('y', -AV_R)
-      .attr('width', AV_R * 2).attr('height', AV_R * 2)
-      .attr('preserveAspectRatio', 'xMidYMid slice')
-
-    avatarG.append('text')
-      .attr('x', AV_R + 6)
-      .attr('y', 0)
-      .attr('dominant-baseline', 'middle')
-      .attr('fill', personColor(name))
-      .style('font-size', '12px')
-      .style('font-weight', '600')
-      .text(name)
-  })
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
