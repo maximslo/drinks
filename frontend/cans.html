@@ -247,6 +247,172 @@
       #cans-grid { grid-template-columns: repeat(2, 1fr); }
     }
 
+    /* ════════════════════════════ DUOS SECTION ════════════════════════════ */
+
+    #duos-section {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 52px 24px 0;
+    }
+
+    #duos-section h2 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+    }
+
+    #duos-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 28px 16px;
+      margin-top: 28px;
+    }
+
+    .duo-card {
+      min-width: 0;
+    }
+
+    .duo-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+
+    .duo-avatars {
+      display: flex;
+      flex-shrink: 0;
+    }
+
+    .duo-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      object-fit: cover;
+      object-position: top center;
+      display: block;
+      border: 2px solid #1c1c1e;
+      filter: grayscale(100%) contrast(1.05);
+    }
+    .duo-avatar:first-child { z-index: 1; position: relative; }
+    .duo-avatar + .duo-avatar { margin-left: -14px; }
+
+    .duo-text {
+      flex: 1;
+      min-width: 0;
+      line-height: 1.15;
+    }
+    .duo-names {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .duo-rank-lbl {
+      font-size: 11px;
+      font-weight: 600;
+      margin-top: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .duo-count {
+      flex-shrink: 0;
+      padding: 9px 14px;
+      border-radius: 9px;
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+      line-height: 1;
+      color: #1c1c1e;
+      white-space: nowrap;
+    }
+    .duo-count .lbl {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-left: 6px;
+      opacity: 0.7;
+    }
+
+    .duo-moments {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 5;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #2c2c2e;
+    }
+    .duo-moment-media {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .duo-moment-zone {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 50%;
+      cursor: pointer;
+      z-index: 2;
+    }
+    .duo-moment-zone.prev { left: 0; }
+    .duo-moment-zone.next { right: 0; }
+    .duo-moment-zone::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      width: 36px;
+      height: 44px;
+      border-radius: 10px;
+      background: var(--duo-color, #f3d2a1);
+      transform: translateY(-50%);
+      transition: transform 0.15s;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+    }
+    .duo-moment-zone.prev::after { left: 12px; }
+    .duo-moment-zone.next::after { right: 12px; }
+    .duo-moment-zone:hover::after { transform: translateY(-50%) scale(1.06); }
+    .duo-moment-zone::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      width: 9px;
+      height: 9px;
+      border-top: 2.5px solid #1c1c1e;
+      border-right: 2.5px solid #1c1c1e;
+      z-index: 1;
+    }
+    .duo-moment-zone.prev::before { left: 26px; transform: translateY(-50%) rotate(-135deg); }
+    .duo-moment-zone.next::before { right: 26px; transform: translateY(-50%) rotate(45deg); }
+
+    .duo-moment-counter {
+      position: absolute;
+      bottom: 8px;
+      right: 10px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 10px;
+      color: rgba(255,255,255,0.9);
+      background: rgba(0,0,0,0.5);
+      padding: 3px 7px;
+      border-radius: 6px;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    @media (max-width: 600px) {
+      #duos-grid { grid-template-columns: 1fr; }
+      .duo-avatar { width: 88px; height: 88px; }
+    }
+
     /* ════════════════════════════ BUMP SECTION ════════════════════════════ */
 
     #bump-section {
@@ -363,6 +529,52 @@
   <p class="section-subtitle">Each can = 10 drinks &mdash; colored by type, ordered most to fewest.</p>
   <div id="cans-legend"></div>
   <div id="cans-grid"></div>
+</section>
+
+<!-- ══════════════════════════════════ DUOS ══════════════════════════════════ -->
+<section id="duos-section">
+  <h2>Dynamic duos</h2>
+  <p class="section-subtitle">Photos with strictly just the two of them &mdash; biggest gaps in the leaderboard.</p>
+
+  <div id="duos-grid">
+    <div class="duo-card" data-duo="jac-mig" style="--duo-color:#f3d2a1">
+      <div class="duo-header">
+        <div class="duo-avatars">
+          <img class="duo-avatar" src="avatars/jacob_.png" alt="Jacob">
+          <img class="duo-avatar" src="avatars/miggy_.png" alt="Miggy">
+        </div>
+        <div class="duo-text">
+          <div class="duo-names">Jacob &amp; Miggy</div>
+          <div class="duo-rank-lbl" style="color:#f3d2a1">#1 DUO</div>
+        </div>
+        <div class="duo-count" style="background:#f3d2a1">310<span class="lbl">photos</span></div>
+      </div>
+      <div class="duo-moments">
+        <div class="duo-moment-zone prev" aria-label="Previous"></div>
+        <div class="duo-moment-zone next" aria-label="Next"></div>
+        <span class="duo-moment-counter"></span>
+      </div>
+    </div>
+
+    <div class="duo-card" data-duo="joe-luc" style="--duo-color:#aacae8">
+      <div class="duo-header">
+        <div class="duo-avatars">
+          <img class="duo-avatar" src="avatars/joseph_.png" alt="Joseph">
+          <img class="duo-avatar" src="avatars/lucas_.png" alt="Lucas">
+        </div>
+        <div class="duo-text">
+          <div class="duo-names">Joseph &amp; Lucas</div>
+          <div class="duo-rank-lbl" style="color:#aacae8">#2 DUO</div>
+        </div>
+        <div class="duo-count" style="background:#aacae8">137<span class="lbl">photos</span></div>
+      </div>
+      <div class="duo-moments">
+        <div class="duo-moment-zone prev" aria-label="Previous"></div>
+        <div class="duo-moment-zone next" aria-label="Next"></div>
+        <span class="duo-moment-counter"></span>
+      </div>
+    </div>
+  </div>
 </section>
 
 <!-- ══════════════════════════════════ BUMP ══════════════════════════════════ -->
@@ -851,6 +1063,49 @@ function renderCans() {
   })
 }
 
+// ── Duo moments carousel ─────────────────────────────────────────────────────
+
+const DUO_MOMENTS = {
+  'jac-mig': ['22864.jpg','25935.jpg','40967.jpg'],
+  'joe-luc': ['33503.mov','21440.jpg','32607.jpg','32877.jpg','33334.jpg','33357.jpg','33484.jpg','36775.jpg','36891.jpg','39216.jpg','44627.jpg','44659.jpg'],
+}
+
+function renderDuoMoments() {
+  document.querySelectorAll('.duo-card[data-duo]').forEach(card => {
+    const key = card.dataset.duo
+    const files = DUO_MOMENTS[key] || []
+    if (!files.length) return
+
+    const wrap = card.querySelector('.duo-moments')
+    const counter = wrap.querySelector('.duo-moment-counter')
+    const prev = wrap.querySelector('.duo-moment-zone.prev')
+    const next = wrap.querySelector('.duo-moment-zone.next')
+    let idx = 0
+    let mediaEl = null
+
+    const show = i => {
+      idx = (i + files.length) % files.length
+      const file = files[idx]
+      const src = `moments/${key}/${file}`
+      const isVideo = /\.(mov|mp4|webm)$/i.test(file)
+      const tag = isVideo ? 'video' : 'img'
+      if (!mediaEl || mediaEl.tagName.toLowerCase() !== tag) {
+        if (mediaEl) mediaEl.remove()
+        mediaEl = document.createElement(tag)
+        mediaEl.className = 'duo-moment-media'
+        if (isVideo) { mediaEl.autoplay = true; mediaEl.loop = true; mediaEl.muted = true; mediaEl.playsInline = true }
+        wrap.prepend(mediaEl)
+      }
+      mediaEl.src = src
+      counter.textContent = `${idx + 1} / ${files.length}`
+    }
+
+    prev.addEventListener('click', () => show(idx - 1))
+    next.addEventListener('click', () => show(idx + 1))
+    show(0)
+  })
+}
+
 // ── Bump chart ───────────────────────────────────────────────────────────────
 
 function renderBump() {
@@ -1000,6 +1255,7 @@ function renderBump() {
 init()
 requestAnimationFrame(tick)
 renderCans()
+renderDuoMoments()
 renderBump()
 </script>
 </body>
