@@ -1,6 +1,8 @@
 # GitHub Linguist: keep language stats focused on the Python pipeline.
 # clusters.html is a generated face-cluster visualization dump (~5 MB).
 facial/clusters.html  linguist-generated=true
-# Frontend pages are hand-written but byte-heavy D3/HTML; down-weight so the
-# repo reads as the Python project it is.
-frontend/*.html       linguist-vendored=true
+# Heaviest D3 viz pages are byte-dominant; down-weight just these so the repo
+# reads as the Python project it is while smaller HTML still shows.
+frontend/cans.html      linguist-vendored=true
+frontend/analytics.html linguist-vendored=true
+frontend/drinkmap.html  linguist-vendored=true
