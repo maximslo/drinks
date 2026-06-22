@@ -4,14 +4,15 @@
        cd ~/drinks && python3 scripts/sync_messages.py
   2. Start the API:
        cd ~/drinks && source venv/bin/activate && uvicorn api.main:app --reload
-  3. Open this file in your browser:
-       file:///Users/admin/drinks/frontend/messages.html
+  3. Open in your browser (must be served by the API, NOT file://):
+       http://localhost:8000/ui/messages.html
 
   ONE-TIME / RECOVERY COMMANDS:
-    python3 scripts/sync_messages.py --backfill        # re-sync full history
-    python3 scripts/sync_messages.py --fix-text        # recover missing message text
-    python3 scripts/sync_messages.py --fix-attachments # copy missing photos/videos
-    python3 scripts/sync_messages.py --fix-heic        # convert HEIC photos to JPEG
+    python3 scripts/sync_messages.py --backfill             # re-sync full history
+    python3 scripts/sync_messages.py --fix-text             # recover missing message text
+    python3 scripts/sync_messages.py --fix-attachments      # copy missing photos/videos
+    python3 scripts/sync_messages.py --rebuild-attachments  # recover ALL photos per message (multi-photo messages)
+    python3 scripts/sync_messages.py --fix-heic             # convert HEIC photos to JPEG
 -->
 <!DOCTYPE html>
 <html lang="en">
@@ -198,7 +199,8 @@
       border-radius: 18px 18px 4px 18px;
     }
 
-    .bubble img {
+    .bubble img,
+    .bubble video {
       display: block;
       max-width: 240px;
       max-height: 320px;
@@ -206,7 +208,23 @@
       cursor: pointer;
       object-fit: cover;
     }
-    .bubble img + .bubble-text { margin-top: 6px; }
+    .bubble video { cursor: default; }
+
+    /* Multiple photos/videos in one message → compact grid */
+    .attachment-gallery.multi {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 3px;
+      max-width: 246px;
+    }
+    .attachment-gallery.multi img,
+    .attachment-gallery.multi video {
+      width: 100%;
+      max-width: none;
+      height: 120px;
+      border-radius: 6px;
+    }
+    .attachment-gallery + .bubble-text { margin-top: 6px; }
 
     .attachment-placeholder {
       font-style: italic;
@@ -404,28 +422,39 @@
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
 
-    // attachment
+    // attachment(s) — a single message can carry multiple photos/videos
     if (msg.has_attachment) {
-      const isVideo = (msg.attachment_mime || '').startsWith('video/');
-      if (isVideo) {
-        const video = document.createElement('video');
-        video.src = `${API}/attachment/${msg.rowid}`;
-        video.controls = true;
-        video.style.cssText = 'display:block;max-width:240px;max-height:320px;border-radius:10px;';
-        bubble.appendChild(video);
-      } else {
-        const img = document.createElement('img');
-        img.src = `${API}/attachment/${msg.rowid}`;
-        img.loading = 'lazy';
-        img.alt = 'Photo';
-        img.onerror = function() {
-          this.replaceWith(Object.assign(document.createElement('span'), {
-            className: 'attachment-placeholder', textContent: '📷 Photo'
-          }));
-        };
-        img.onclick = e => { e.stopPropagation(); openLightbox(img.src); };
-        bubble.appendChild(img);
-      }
+      const atts = (msg.attachments && msg.attachments.length)
+        ? msg.attachments
+        : [{ idx: 0, mime: msg.attachment_mime }];
+
+      const gallery = document.createElement('div');
+      gallery.className = 'attachment-gallery' + (atts.length > 1 ? ' multi' : '');
+
+      atts.forEach(att => {
+        const src = `${API}/attachment/${msg.rowid}/${att.idx}`;
+        const isVideo = (att.mime || '').startsWith('video/');
+        if (isVideo) {
+          const video = document.createElement('video');
+          video.src = src;
+          video.controls = true;
+          gallery.appendChild(video);
+        } else {
+          const img = document.createElement('img');
+          img.src = src;
+          img.loading = 'lazy';
+          img.alt = 'Photo';
+          img.onerror = function() {
+            this.replaceWith(Object.assign(document.createElement('span'), {
+              className: 'attachment-placeholder', textContent: '📷 Photo'
+            }));
+          };
+          img.onclick = e => { e.stopPropagation(); openLightbox(src); };
+          gallery.appendChild(img);
+        }
+      });
+
+      bubble.appendChild(gallery);
     }
 
     // text

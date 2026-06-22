@@ -239,6 +239,19 @@ def get_messages(
         f"SELECT * FROM messages {where} ORDER BY sent_at DESC LIMIT ? OFFSET ?",
         params + [limit, offset]
     ).fetchall()
+
+    # Fetch all attachments for the returned messages in one query (avoid N+1).
+    attach_rowids = [r["rowid"] for r in rows if r["has_attachment"]]
+    attach_map = {}
+    if attach_rowids:
+        placeholders = ",".join("?" * len(attach_rowids))
+        for a in conn.execute(
+            f"SELECT message_rowid, idx, path, mime FROM attachments "
+            f"WHERE message_rowid IN ({placeholders}) ORDER BY message_rowid, idx",
+            attach_rowids,
+        ).fetchall():
+            mime = a["mime"] or (mimetypes.guess_type(a["path"])[0] if a["path"] else None)
+            attach_map.setdefault(a["message_rowid"], []).append({"idx": a["idx"], "mime": mime})
     conn.close()
 
     messages = []
@@ -247,6 +260,11 @@ def get_messages(
         text = (r["text"] or "").lstrip("￼").strip() or None
         attach_path = r["attachment_path"]
         attach_mime = mimetypes.guess_type(attach_path)[0] if attach_path else None
+        # Prefer the attachments table; fall back to the legacy single column
+        # for any message not yet processed by --rebuild-attachments.
+        attachments = attach_map.get(r["rowid"])
+        if not attachments and r["has_attachment"] and attach_path:
+            attachments = [{"idx": 0, "mime": attach_mime}]
         messages.append({
             "rowid": r["rowid"],
             "phone": r["phone"],
@@ -257,21 +275,39 @@ def get_messages(
             "has_attachment": r["has_attachment"],
             "attachment_path": attach_path,
             "attachment_mime": attach_mime,
+            "attachments": attachments or [],
             "is_reaction": r["is_reaction"],
         })
 
     return {"total": total, "offset": offset, "limit": limit, "messages": messages}
 
-@app.get("/attachment/{rowid}")
-def get_attachment(rowid: int):
+
+def _serve_attachment(rowid: int, idx: int):
     conn = get_messages_db()
     row = conn.execute(
-        "SELECT attachment_path FROM messages WHERE rowid = ?", (rowid,)
+        "SELECT path FROM attachments WHERE message_rowid = ? AND idx = ?", (rowid, idx)
     ).fetchone()
+    path_rel = row["path"] if row else None
+    # Fall back to the legacy single-attachment column (idx 0 only).
+    if path_rel is None and idx == 0:
+        legacy = conn.execute(
+            "SELECT attachment_path FROM messages WHERE rowid = ?", (rowid,)
+        ).fetchone()
+        path_rel = legacy["attachment_path"] if legacy else None
     conn.close()
-    if not row or not row["attachment_path"]:
+    if not path_rel:
         raise HTTPException(status_code=404, detail="No attachment")
-    path = os.path.join(DATA_DIR, row["attachment_path"])
+    path = os.path.join(DATA_DIR, path_rel)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(path)
+
+
+@app.get("/attachment/{rowid}")
+def get_attachment(rowid: int):
+    return _serve_attachment(rowid, 0)
+
+
+@app.get("/attachment/{rowid}/{idx}")
+def get_attachment_idx(rowid: int, idx: int):
+    return _serve_attachment(rowid, idx)

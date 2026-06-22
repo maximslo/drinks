@@ -134,6 +134,16 @@ def init_db(conn):
             value TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS attachments (
+            message_rowid INTEGER NOT NULL,
+            idx           INTEGER NOT NULL,
+            path          TEXT,
+            mime          TEXT,
+            PRIMARY KEY (message_rowid, idx)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_attach_msg ON attachments(message_rowid)")
     try:
         conn.execute("ALTER TABLE messages ADD COLUMN attachment_path TEXT")
     except sqlite3.OperationalError:
@@ -190,27 +200,40 @@ def fetch_from_chat_db(chat_conn, last_rowid, chat_id):
     """, (chat_id, last_rowid)).fetchall()
 
 
-def deduplicate_rows(rows):
-    """Keep first image attachment per message ROWID."""
-    seen = {}
+def group_by_message(rows):
+    """Collapse flat (message × attachment) rows into one entry per message.
+
+    The chat.db query returns one row per attachment, so a message with N
+    photos appears N times. Preserve ROWID order and collect ALL image/video
+    attachments per message instead of keeping only the first.
+    """
+    groups = {}
+    order = []
     for row in rows:
         rowid = row[0]
-        if rowid not in seen:
-            seen[rowid] = row
-        elif row[7] and not seen[rowid][7]:  # row[7] = attach_filename
-            seen[rowid] = row
-    return list(seen.values())
+        if rowid not in groups:
+            groups[rowid] = {"msg": row, "attachments": []}
+            order.append(rowid)
+        if row[7]:  # row[7] = attach_filename, row[8] = attach_mime
+            groups[rowid]["attachments"].append((row[7], row[8]))
+    return [groups[r] for r in order]
 
 
-def copy_attachment(rowid, src_path):
+def copy_attachment(rowid, src_path, idx=0):
+    """Copy a single attachment to data/attachments/.
+
+    idx 0 keeps the legacy filename ``{rowid}.{ext}`` so existing files and the
+    ``/attachment/{rowid}`` endpoint stay valid; idx > 0 uses ``{rowid}_{idx}.{ext}``.
+    """
     if not src_path:
         return None
     src = os.path.expanduser(src_path)
     if not os.path.exists(src):
         return None
+    suffix = "" if idx == 0 else f"_{idx}"
     ext = src_path.rsplit('.', 1)[-1].lower() if '.' in src_path else 'jpg'
     if ext == 'heic':
-        dst = os.path.join(ATTACHMENTS_DIR, f"{rowid}.jpg")
+        dst = os.path.join(ATTACHMENTS_DIR, f"{rowid}{suffix}.jpg")
         if not os.path.exists(dst):
             r = subprocess.run(
                 ['sips', '-s', 'format', 'jpeg', src, '--out', dst],
@@ -218,12 +241,12 @@ def copy_attachment(rowid, src_path):
             )
             if r.returncode != 0 or not os.path.exists(dst):
                 return None
-        return f"attachments/{rowid}.jpg"
-    dst = os.path.join(ATTACHMENTS_DIR, f"{rowid}.{ext}")
+        return f"attachments/{rowid}{suffix}.jpg"
+    dst = os.path.join(ATTACHMENTS_DIR, f"{rowid}{suffix}.{ext}")
     if os.path.exists(dst):
-        return f"attachments/{rowid}.{ext}"
+        return f"attachments/{rowid}{suffix}.{ext}"
     shutil.copy2(src, dst)
-    return f"attachments/{rowid}.{ext}"
+    return f"attachments/{rowid}{suffix}.{ext}"
 
 
 def fix_heic(msg_conn, verbose):
@@ -255,22 +278,36 @@ def fix_heic(msg_conn, verbose):
     return count
 
 
-def upsert_messages(msg_conn, rows, chat_id, verbose):
+def upsert_messages(msg_conn, groups, chat_id, verbose):
     count = 0
-    for rowid, phone, raw_text, attributed_body, date_val, is_from_me, has_attachment, attach_filename, attach_mime in rows:
+    for g in groups:
+        rowid, phone, raw_text, attributed_body, date_val, is_from_me, has_attachment, _f, _m = g["msg"]
         sent_at = apple_date_to_iso(date_val)
         text = resolve_text(raw_text, attributed_body)
         reaction = 1 if is_reaction(text) else 0
-        attach_path = copy_attachment(rowid, attach_filename)
+
+        # copy every image/video attachment for this message
+        copied = []
+        for idx, (filename, mime) in enumerate(g["attachments"]):
+            path = copy_attachment(rowid, filename, idx)
+            if path:
+                copied.append((idx, path, mime))
+
+        first_path = copied[0][1] if copied else None
         msg_conn.execute(
             "INSERT OR IGNORE INTO messages "
             "(rowid, phone, text, sent_at, is_from_me, has_attachment, is_reaction, attachment_path, chat_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (rowid, phone, text, sent_at, is_from_me or 0, has_attachment or 0, reaction, attach_path, chat_id)
+            (rowid, phone, text, sent_at, is_from_me or 0, has_attachment or 0, reaction, first_path, chat_id)
         )
+        for idx, path, mime in copied:
+            msg_conn.execute(
+                "INSERT OR IGNORE INTO attachments (message_rowid, idx, path, mime) VALUES (?, ?, ?, ?)",
+                (rowid, idx, path, mime)
+            )
         count += 1
         if verbose:
-            print(f"  ROWID={rowid} phone={phone} sent_at={sent_at} reaction={reaction} attach={attach_path} text={str(text)[:50]!r}")
+            print(f"  ROWID={rowid} phone={phone} sent_at={sent_at} reaction={reaction} attach={len(copied)} text={str(text)[:50]!r}")
     msg_conn.commit()
     return count
 
@@ -369,12 +406,67 @@ def backfill_missing_attachments(msg_conn, chat_conn, verbose):
     return count
 
 
+def rebuild_attachments(msg_conn, chat_conn, verbose):
+    """Populate the attachments table for every message with media, copying
+    ALL image/video attachments per message (not just the first).
+
+    Run this once after upgrading to the multi-attachment schema so that
+    messages synced under the old one-attachment logic gain their extra photos.
+    """
+    msg_rows = msg_conn.execute(
+        "SELECT rowid FROM messages WHERE has_attachment = 1"
+    ).fetchall()
+    rowids = [r[0] for r in msg_rows]
+    if not rowids:
+        return 0
+
+    filled = 0
+    for i in range(0, len(rowids), CHUNK):
+        chunk = rowids[i:i + CHUNK]
+        placeholders = ','.join('?' * len(chunk))
+        attach_rows = chat_conn.execute(f"""
+            SELECT maj.message_id, a.filename, a.mime_type
+            FROM message_attachment_join maj
+            JOIN attachment a ON maj.attachment_id = a.ROWID
+            WHERE maj.message_id IN ({placeholders})
+              AND (a.mime_type LIKE 'image/%' OR a.mime_type LIKE 'video/%')
+            ORDER BY maj.message_id ASC, a.ROWID ASC
+        """, chunk).fetchall()
+
+        by_msg = {}
+        for message_id, filename, mime in attach_rows:
+            by_msg.setdefault(message_id, []).append((filename, mime))
+
+        for message_id, atts in by_msg.items():
+            copied = []
+            for idx, (filename, mime) in enumerate(atts):
+                path = copy_attachment(message_id, filename, idx)
+                if path:
+                    copied.append((idx, path, mime))
+                    msg_conn.execute(
+                        "INSERT OR IGNORE INTO attachments (message_rowid, idx, path, mime) VALUES (?, ?, ?, ?)",
+                        (message_id, idx, path, mime)
+                    )
+            if copied:
+                msg_conn.execute(
+                    "UPDATE messages SET attachment_path = ? WHERE rowid = ? AND attachment_path IS NULL",
+                    (copied[0][1], message_id)
+                )
+                filled += 1
+                if verbose and len(copied) > 1:
+                    print(f"  ROWID={message_id}: {len(copied)} attachments")
+        msg_conn.commit()
+
+    return filled
+
+
 def main():
     parser = argparse.ArgumentParser(description="Sync iMessage beer chat to local messages.db")
     parser.add_argument("--backfill", action="store_true", help="Sync all history from ROWID 0")
     parser.add_argument("--chat-id", help="Sync only this chat ID (default: all known chats)")
     parser.add_argument("--fix-text", action="store_true", help="Re-parse attributedBody for existing NULL-text rows only")
     parser.add_argument("--fix-attachments", action="store_true", help="Copy missing attachment files for existing rows")
+    parser.add_argument("--rebuild-attachments", action="store_true", help="Rebuild attachments table with ALL photos/videos per message")
     parser.add_argument("--fix-heic", action="store_true", help="Convert existing .heic attachments to .jpg")
     parser.add_argument("--verbose", action="store_true", help="Print each row as it syncs")
     args = parser.parse_args()
@@ -399,6 +491,13 @@ def main():
         chat_conn.close()
         return
 
+    if args.rebuild_attachments:
+        print("[sync] Rebuilding attachments table (all photos/videos per message)...")
+        filled = rebuild_attachments(msg_conn, chat_conn, args.verbose)
+        print(f"[sync] Populated attachments for {filled} messages.")
+        chat_conn.close()
+        return
+
     if args.fix_text:
         print("[sync] Re-parsing attributedBody for existing NULL-text rows...")
         filled_text = backfill_missing_text(msg_conn, chat_conn, args.verbose)
@@ -416,10 +515,10 @@ def main():
         print(f"[sync] {'Backfill' if args.backfill else 'Incremental'} sync of {chat_id} from ROWID {last_rowid}...")
 
         rows = fetch_from_chat_db(chat_conn, last_rowid, chat_id)
-        rows = deduplicate_rows(rows)
+        groups = group_by_message(rows)
 
-        if rows:
-            count = upsert_messages(msg_conn, rows, chat_id, args.verbose)
+        if groups:
+            count = upsert_messages(msg_conn, groups, chat_id, args.verbose)
             set_last_rowid(msg_conn, chat_id, rows[-1][0])
             print(f"[sync] Inserted {count} rows (last ROWID: {rows[-1][0]})")
         else:
@@ -430,9 +529,9 @@ def main():
         filled_text = backfill_missing_text(msg_conn, chat_conn, args.verbose)
         print(f"[sync] Updated text for {filled_text} rows.")
 
-        print("[sync] Backfilling attachments for existing rows...")
-        filled_attach = backfill_missing_attachments(msg_conn, chat_conn, args.verbose)
-        print(f"[sync] Backfilled {filled_attach} attachments.")
+        print("[sync] Rebuilding attachments table (all photos/videos per message)...")
+        filled_attach = rebuild_attachments(msg_conn, chat_conn, args.verbose)
+        print(f"[sync] Populated attachments for {filled_attach} messages.")
 
     chat_conn.close()
 
