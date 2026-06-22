@@ -1,5 +1,8 @@
 .env
 data/drinks.db
+
+# Runtime logs (written by api/watcher/tunnel — churn constantly, not source)
+data/*.log
 __pycache__/
 *.pyc
 venv/

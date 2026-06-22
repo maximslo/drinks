@@ -20,9 +20,5 @@ for d in drinks[:20]:
 
 print(f"\n...and {max(0, len(drinks)-20)} more")
 
-# show flagged log if it exists
-flag_log = os.path.expanduser("~/drinks/data/flagged.log")
-if os.path.exists(flag_log):
-    print("\n--- FLAGGED ---")
-    with open(flag_log) as f:
-        print(f.read())
+# Flagged messages (MISSING_PHOTO / UNRESOLVED) are printed inline by flag()
+# during process_messages above.

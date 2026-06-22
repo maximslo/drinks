@@ -19,7 +19,6 @@ DRINKS_DB = os.getenv("DRINKS_DB_PATH", os.path.expanduser("~/drinks/data/drinks
 MSGS_DB   = os.getenv("MSGS_DB_PATH",  os.path.expanduser("~/drinks/data/messages.db"))
 DATA_DIR  = os.path.expanduser("~/drinks/data")
 CHAT_ID   = os.getenv("CHAT_ID",        "chat313739884378608609")
-FLAG_LOG  = os.path.expanduser("~/drinks/data/flagged.log")
 SELF      = os.getenv("SELF_HANDLE",    "+17812050278")  # Mac Mini owner; handle_id is NULL for self-sent messages
 POLL_INTERVAL = 2
 PENDING_TIMEOUT = 90
@@ -170,10 +169,9 @@ def is_consecutive(nums):
 # ─── Flagging ─────────────────────────────────────────────────────────────────
 
 def flag(reason, messages):
-    with open(FLAG_LOG, "a") as f:
-        f.write(f"\n[FLAGGED: {reason}]\n")
-        for m in messages:
-            f.write(f"  ROWID={m[0]} handle={m[1]} text={m[2]!r}\n")
+    print(f"\n[FLAGGED: {reason}]")
+    for m in messages:
+        print(f"  ROWID={m[0]} handle={m[1]} text={m[2]!r}")
 
 
 # ─── Face recognition ─────────────────────────────────────────────────────────
