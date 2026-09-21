@@ -1,0 +1,582 @@
+<!--
+  HOW TO RUN:
+       http://localhost:8000/ui/validate.html
+
+  Validation grid for the annotation sets (default: set 3 "Combined"). Photos only —
+  no message history. Click a photo to see and edit its annotation; select several and
+  delete them in one go. Edits write straight into the set via /groups*.
+
+    click          select one photo and show its annotation
+    ⌘/ctrl-click   add to / remove from the selection
+    shift-click    select a range
+    ⌫ / delete     delete the selected entries (with undo)
+    ⌘↵             save the note you are editing
+    esc            clear the selection
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Validate Annotations</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f5f7;
+    color: #1c1c1e;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Toolbar ─────────────────────────────────────────────────────────── */
+  #toolbar {
+    background: #fff;
+    border-bottom: 1px solid #e5e5ea;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  #toolbar h1 { font-size: 16px; font-weight: 600; margin-right: 4px; }
+  .spacer { flex: 1; }
+
+  .btn {
+    border: 1px solid #d1d1d6; background: #fff; border-radius: 16px; padding: 5px 14px;
+    font-size: 13px; cursor: pointer; color: #1c1c1e; white-space: nowrap;
+  }
+  .btn:hover { background: #f2f2f7; }
+  .btn.primary { background: #0B84FE; border-color: #0B84FE; color: #fff; }
+  .btn.danger { background: #d93025; border-color: #d93025; color: #fff; }
+  .btn.danger:hover { background: #bb2419; }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn.on { background: #5b3fd6; border-color: #5b3fd6; color: #fff; }
+
+  #chips { display: inline-flex; }
+  #chips .btn { border-radius: 0; }
+  #chips .btn:first-child { border-radius: 16px 0 0 16px; }
+  #chips .btn:last-child { border-radius: 0 16px 16px 0; margin-left: -1px; }
+
+  input[type=search], select {
+    border: 1px solid #d1d1d6; border-radius: 8px; padding: 6px 12px;
+    font-size: 14px; outline: none; background: #f2f2f7; font-family: inherit;
+  }
+  input[type=search]:focus { border-color: #0B84FE; background: #fff; }
+  input[type=search] { width: 200px; }
+
+  /* ── Layout ──────────────────────────────────────────────────────────── */
+  #body { flex: 1; display: flex; overflow: hidden; }
+
+  #grid {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    /* fixed rows: Chrome stops intrinsically sizing auto rows past ~500 items and
+       collapses every row to the border height */
+    grid-auto-rows: 232px;
+    gap: 12px;
+    align-content: start;
+  }
+
+  .tile {
+    position: relative;
+    content-visibility: auto;          /* skip painting the thousands off-screen */
+    contain-intrinsic-size: 168px 232px;
+    background: #fff;
+    border: 2px solid transparent;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+  }
+  .tile:hover { box-shadow: 0 2px 8px rgba(0,0,0,.14); }
+  .tile.selected { border-color: #0B84FE; box-shadow: 0 0 0 3px rgba(11,132,254,.25); }
+  .tile.focused::after {
+    content: ''; position: absolute; inset: 0; border: 2px dashed #5b3fd6;
+    border-radius: 8px; pointer-events: none;
+  }
+
+  /* fixed media height: an aspect-ratio box inside an auto-sized grid row
+     collapses in Chrome (cyclic sizing), which flattened every tile */
+  .tile .shot {
+    width: 100%; height: 172px; display: block; object-fit: cover;
+    background: #e5e5ea;
+  }
+  .tile .missing {
+    width: 100%; height: 172px; display: flex; align-items: center; justify-content: center;
+    background: #ebebf0; color: #8e8e93; font-size: 24px;
+  }
+
+  .tile .note {
+    font-size: 12px; line-height: 1.35; padding: 6px 8px 7px;
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 56px; overflow: hidden;
+  }
+  .tile .note.none { color: #b0b0b5; font-style: italic; }
+
+  .badge {
+    position: absolute; top: 6px; left: 6px;
+    background: rgba(0,0,0,.66); color: #fff; font-size: 10px; font-weight: 700;
+    padding: 2px 6px; border-radius: 8px; backdrop-filter: blur(2px);
+  }
+  .badge.solo { left: auto; right: 6px; background: rgba(26,127,55,.85); }
+  .stamp {
+    position: absolute; top: 6px; right: 6px;
+    background: rgba(0,0,0,.5); color: #fff; font-size: 10px;
+    padding: 2px 6px; border-radius: 8px;
+  }
+  .tile.solo-on .stamp { top: 28px; }
+
+  /* ── Detail panel ────────────────────────────────────────────────────── */
+  #panel {
+    width: 360px; min-width: 360px;
+    background: #fff; border-left: 1px solid #e5e5ea;
+    display: flex; flex-direction: column; overflow-y: auto;
+  }
+  #panel.empty { align-items: center; justify-content: center; color: #8e8e93; font-size: 14px; padding: 20px; text-align: center; }
+  #panel img.big, #panel video.big { width: 100%; display: block; background: #000; }
+  .panel-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .meta { font-size: 12px; color: #8e8e93; line-height: 1.5; }
+  .meta b { color: #1c1c1e; font-weight: 600; }
+  #note-edit {
+    width: 100%; min-height: 110px; font: inherit; font-size: 14px; padding: 8px 10px;
+    border: 1px solid #d1d1d6; border-radius: 8px; resize: vertical; outline: none;
+    background: #fffbea; line-height: 1.45;
+  }
+  #note-edit:focus { border-color: #0B84FE; background: #fff; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .solo-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer; user-select: none; }
+  .solo-toggle input { accent-color: #1a7f37; cursor: pointer; }
+  .hint { font-size: 11px; color: #a0a0a5; }
+
+  #status { padding: 40px; text-align: center; color: #8e8e93; grid-column: 1 / -1; }
+
+  #toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    background: #1c1c1e; color: #fff; font-size: 13px; padding: 9px 16px; border-radius: 10px;
+    opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 600;
+  }
+  #toast.show { opacity: .94; pointer-events: auto; }
+  .toast-action { background: none; border: none; color: #6ab7ff; font: inherit; font-weight: 600; cursor: pointer; margin-left: 10px; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>✅ Validate</h1>
+  <span id="chips">
+    <button class="btn on" data-only="annotated" onclick="setFilter('annotated')">Annotated</button>
+    <button class="btn" data-only="unannotated" onclick="setFilter('unannotated')">Unannotated</button>
+    <button class="btn" data-only="all" onclick="setFilter('all')">All</button>
+  </span>
+  <select id="person" onchange="applyFilters()"><option value="">Everyone in note</option></select>
+  <input id="search" type="search" placeholder="Search notes…">
+  <span class="spacer"></span>
+  <span id="count" class="meta"></span>
+  <button class="btn" id="select-all" onclick="selectAllVisible()">Select all</button>
+  <button class="btn danger" id="del-btn" onclick="deleteSelected()" disabled>Delete</button>
+  <a class="btn" style="text-decoration:none" id="export-photos" href="#" download>⬇ Photos CSV</a>
+  <a class="btn" style="text-decoration:none" id="export-chat" href="#" download>⬇ Chat CSV</a>
+  <a class="btn" style="text-decoration:none" href="messages-notes.html">Notes page →</a>
+</div>
+
+<div id="body">
+  <div id="grid"><div id="status">Loading…</div></div>
+  <div id="panel" class="empty">Click a photo to see its annotation</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  const API = window.location.origin.includes('localhost') ? 'http://localhost:8000' : '';
+  const SET_ID = 3;                     // the Combined set the grid validates
+  const NAMES = ['Avi','Cole','Hunter','Jacob','Joseph','Kacper','Liam','Lucas','Marek','Maxim','Miggy','Owen'];
+
+  const state = {
+    only: 'annotated',
+    photos: [],        // everything fetched for the current filter
+    view: [],          // after person/search filtering — what the grid shows
+    counts: {},
+    selected: new Set(),   // keys "rowid_idx"
+    anchor: null,          // for shift-click ranges
+    focus: null,           // last clicked key, shown in the panel
+  };
+
+  const keyOf = p => `${p.rowid}_${p.idx}`;
+  const byKey = k => state.view.find(p => keyOf(p) === k) || state.photos.find(p => keyOf(p) === k);
+  const thumbUrl = p => `${API}/thumb/${p.rowid}/${p.idx}`;
+  const fullUrl = p => `${API}/attachment/${p.rowid}/${p.idx}`;
+
+  async function api(method, path, body) {
+    const res = await fetch(`${API}${path}`, {
+      method, headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) { toast(`${method} ${path} failed (${res.status})`); throw new Error(res.status); }
+    return res.json();
+  }
+
+  // ── Load ──────────────────────────────────────────────────────────────────
+
+  async function load(keepPlace) {
+    const grid = document.getElementById('grid');
+    const anchor = keepPlace ? captureAnchor() : null;
+    if (!keepPlace) grid.innerHTML = '<div id="status">Loading…</div>';
+    const data = await api('GET', `/grid?set_id=${SET_ID}&only=${state.only}`);
+    state.photos = data.photos;
+    state.counts = data.counts;
+    document.querySelectorAll('#chips .btn').forEach(b => {
+      const n = b.dataset.only === 'all'
+        ? (state.counts.annotated || 0) + (state.counts.unannotated || 0)
+        : state.counts[b.dataset.only] || 0;
+      b.textContent = `${b.dataset.only[0].toUpperCase()}${b.dataset.only.slice(1)} ${n.toLocaleString()}`;
+    });
+    applyFilters(anchor);
+  }
+
+  function applyFilters(anchor) {
+    const person = document.getElementById('person').value.toLowerCase();
+    const q = document.getElementById('search').value.trim().toLowerCase();
+    state.view = state.photos.filter(p => {
+      const note = (p.note || '').toLowerCase();
+      if (person && !note.split('\n').some(l => l.trim().startsWith(person + ','))) return false;
+      if (q && !note.includes(q)) return false;
+      return true;
+    });
+    render(anchor);
+  }
+
+  function setFilter(only) {
+    state.only = only;
+    syncExports();
+    document.querySelectorAll('#chips .btn').forEach(b => b.classList.toggle('on', b.dataset.only === only));
+    clearSelection();
+    load();
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  // Keep the viewport put across re-renders: remember the first visible tile and
+  // where it sat, then scroll it back there. Deleting used to jump to the top.
+  function captureAnchor() {
+    const grid = document.getElementById('grid');
+    const gridTop = grid.getBoundingClientRect().top;
+    const tiles = [...grid.querySelectorAll('.tile')];
+    const i = tiles.findIndex(t => t.getBoundingClientRect().bottom > gridTop + 1);
+    if (i < 0) return null;
+    return {
+      keys: tiles.slice(i, i + 40).map(t => t.dataset.key),   // fallbacks if it was removed
+      offset: tiles[i].getBoundingClientRect().top - gridTop,
+    };
+  }
+
+  function restoreAnchor(a) {
+    if (!a) return;
+    const grid = document.getElementById('grid');
+    for (const key of a.keys) {
+      const el = grid.querySelector(`.tile[data-key="${key}"]`);
+      if (!el) continue;
+      grid.scrollTop += el.getBoundingClientRect().top - grid.getBoundingClientRect().top - a.offset;
+      return;
+    }
+  }
+
+  function render(anchor) {
+    const grid = document.getElementById('grid');
+    const frag = document.createDocumentFragment();
+    state.view.forEach(p => frag.appendChild(buildTile(p)));
+    grid.innerHTML = '';
+    grid.appendChild(frag);
+    if (!state.view.length) {
+      grid.innerHTML = '<div id="status">Nothing matches these filters.</div>';
+    }
+    restoreAnchor(anchor);
+    updateCount();
+  }
+
+  function buildTile(p) {
+    const k = keyOf(p);
+    const tile = document.createElement('div');
+    tile.className = 'tile' + (state.selected.has(k) ? ' selected' : '') + (p.solo ? ' solo-on' : '');
+    tile.dataset.key = k;
+
+    if (!p.has_file) {
+      tile.innerHTML = '<div class="missing">📷</div>';
+    } else if (p.is_video) {
+      const v = document.createElement('video');
+      v.className = 'shot'; v.src = thumbUrl(p); v.muted = true; v.preload = 'metadata';
+      tile.appendChild(v);
+    } else {
+      const img = document.createElement('img');
+      img.className = 'shot'; img.loading = 'lazy'; img.src = thumbUrl(p); img.alt = '';
+      img.dataset.tries = '0';
+      img.onerror = function () {
+        const n = +this.dataset.tries + 1; this.dataset.tries = n;
+        if (n <= 2) { setTimeout(() => { this.src = `${thumbUrl(p)}?retry=${n}`; }, 400 * n); return; }
+        this.replaceWith(Object.assign(document.createElement('div'), { className: 'missing', textContent: '📷' }));
+      };
+      tile.appendChild(img);
+    }
+
+    if (p.entry_id) {
+      const b = document.createElement('div');
+      b.className = 'badge';
+      b.textContent = `#${p.label ?? '?'}`;
+      tile.appendChild(b);
+    }
+    if (p.solo) {
+      const s = document.createElement('div');
+      s.className = 'badge solo';
+      s.textContent = 'SOLO';
+      tile.appendChild(s);
+    }
+    const stamp = document.createElement('div');
+    stamp.className = 'stamp';
+    stamp.textContent = shortDate(p.sent_at);
+    tile.appendChild(stamp);
+
+    const note = document.createElement('div');
+    note.className = 'note' + (p.note ? '' : ' none');
+    note.textContent = p.note || 'no annotation';
+    tile.appendChild(note);
+
+    tile.onclick = e => onTileClick(e, k);
+    return tile;
+  }
+
+  function shortDate(sentAt) {
+    const d = new Date(sentAt.replace(' ', 'T') + 'Z');
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+  }
+
+  // ── Selection ─────────────────────────────────────────────────────────────
+
+  function onTileClick(e, k) {
+    if (e.shiftKey && state.anchor) {
+      const keys = state.view.map(keyOf);
+      let a = keys.indexOf(state.anchor), b = keys.indexOf(k);
+      if (a > b) [a, b] = [b, a];
+      keys.slice(a, b + 1).forEach(x => state.selected.add(x));
+    } else if (e.metaKey || e.ctrlKey) {
+      state.selected.has(k) ? state.selected.delete(k) : state.selected.add(k);
+      state.anchor = k;
+    } else {
+      state.selected.clear();
+      state.selected.add(k);
+      state.anchor = k;
+    }
+    state.focus = k;
+    syncSelection();
+    showPanel(k);
+  }
+
+  function syncSelection() {
+    document.querySelectorAll('.tile').forEach(t => {
+      t.classList.toggle('selected', state.selected.has(t.dataset.key));
+      t.classList.toggle('focused', t.dataset.key === state.focus);
+    });
+    updateCount();
+  }
+
+  function updateCount() {
+    const n = state.selected.size;
+    document.getElementById('count').textContent =
+      `${state.view.length.toLocaleString()} shown${n ? ` · ${n} selected` : ''}`;
+    const del = document.getElementById('del-btn');
+    del.disabled = !n;
+    del.textContent = n > 1 ? `Delete ${n}` : 'Delete';
+  }
+
+  function clearSelection() {
+    state.selected.clear(); state.anchor = null; state.focus = null;
+    syncSelection();
+    showPanel(null);
+  }
+
+  function selectAllVisible() {
+    state.view.forEach(p => state.selected.add(keyOf(p)));
+    syncSelection();
+  }
+
+  // ── Detail panel ──────────────────────────────────────────────────────────
+
+  function showPanel(k) {
+    const panel = document.getElementById('panel');
+    const p = k && byKey(k);
+    if (!p) {
+      panel.className = 'empty';
+      panel.textContent = 'Click a photo to see its annotation';
+      return;
+    }
+    panel.className = '';
+    panel.innerHTML = '';
+
+    if (p.has_file) {
+      const media = document.createElement(p.is_video ? 'video' : 'img');
+      media.className = 'big';
+      media.src = p.is_video ? fullUrl(p) : thumbUrl(p);
+      if (p.is_video) media.controls = true;
+      else media.onclick = () => window.open(fullUrl(p), '_blank');
+      panel.appendChild(media);
+    }
+
+    const body = document.createElement('div');
+    body.className = 'panel-body';
+    body.innerHTML = `<div class="meta">
+        <b>${p.entry_id ? '#' + (p.label ?? '?') : 'No entry yet'}</b> ·
+        ${new Date(p.sent_at.replace(' ', 'T') + 'Z').toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}<br>
+        sent by <b>${p.name}</b> · message ${p.rowid}${p.idx ? ' · photo ' + (p.idx + 1) : ''}
+        ${p.text ? '<br>text: “' + p.text.replace(/</g, '&lt;').slice(0, 80) + '”' : ''}
+      </div>`;
+
+    const ta = document.createElement('textarea');
+    ta.id = 'note-edit';
+    ta.value = p.note || '';
+    ta.placeholder = 'person, amount, drink — one line each';
+    ta.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveNote(p, ta.value); }
+      e.stopPropagation();   // typing must not trigger grid shortcuts
+    });
+    body.appendChild(ta);
+
+    const row = document.createElement('div');
+    row.className = 'row';
+    const solo = document.createElement('label');
+    solo.className = 'solo-toggle';
+    solo.innerHTML = `<input type="checkbox" ${p.solo ? 'checked' : ''}> Solo`;
+    solo.querySelector('input').onchange = async e => {
+      if (!p.entry_id) { toast('Save an annotation first'); e.target.checked = false; return; }
+      const g = await api('PATCH', `/groups/${p.entry_id}`, { solo: e.target.checked });
+      p.solo = g.solo;
+      render(); syncSelection();
+    };
+    row.appendChild(solo);
+    row.appendChild(Object.assign(document.createElement('span'), { className: 'spacer' }));
+
+    const save = document.createElement('button');
+    save.className = 'btn primary';
+    save.textContent = p.entry_id ? 'Save' : 'Create';
+    save.onclick = () => saveNote(p, ta.value);
+    row.appendChild(save);
+
+    if (p.entry_id) {
+      const del = document.createElement('button');
+      del.className = 'btn danger';
+      del.textContent = 'Delete';
+      del.title = 'Unlink this photo from its annotation (the note stays in the chat export)';
+      del.onclick = () => unlinkPhotos([[p.rowid, p.idx]]);
+      row.appendChild(del);
+    }
+    body.appendChild(row);
+    body.appendChild(Object.assign(document.createElement('div'), {
+      className: 'hint', textContent: '⌘↵ save · ⌘-click multi-select · shift-click range · ⌫ delete',
+    }));
+    panel.appendChild(body);
+  }
+
+  async function saveNote(p, text) {
+    const note = text.trim();
+    if (p.entry_id) {
+      const g = await api('PATCH', `/groups/${p.entry_id}`, { note });
+      p.note = g.note;
+    } else {
+      if (!note) { toast('Nothing to save'); return; }
+      const g = await api('POST', '/groups', {
+        set_id: SET_ID, chat_id: p.chat_id, photos: [[p.rowid, p.idx]], note,
+      });
+      p.entry_id = g.id; p.note = g.note; p.label = g.label;
+    }
+    await refreshLabels();
+    toast('Saved');
+  }
+
+  // ── Delete + undo ─────────────────────────────────────────────────────────
+
+  async function deleteSelected() {
+    const photos = [...state.selected].map(k => byKey(k)).filter(p => p && p.entry_id)
+                                      .map(p => [p.rowid, p.idx]);
+    if (!photos.length) { toast('Nothing annotated in the selection'); return; }
+    await unlinkPhotos(photos);
+  }
+
+  // Deleting here unlinks the photo from its annotation: other photos of the same
+  // original entry keep theirs, and the note stays in the chat export.
+  async function unlinkPhotos(photos) {
+    await api('POST', '/grid/unlink', { set_id: SET_ID, photos, detached: true });
+    state.selected.clear(); state.focus = null;
+    toast(`Removed ${photos.length} photo annotation${photos.length === 1 ? '' : 's'}`, 'Undo', async () => {
+      await api('POST', '/grid/unlink', { set_id: SET_ID, photos, detached: false });
+      await load(true);
+      toast('Restored');
+    });
+    await load(true);
+    showPanel(null);
+  }
+
+  // Notes renumber when entries change (labels are running drink totals).
+  async function refreshLabels() {
+    const data = await api('GET', `/grid?set_id=${SET_ID}&only=${state.only}`);
+    const map = new Map(data.photos.map(p => [keyOf(p), p]));
+    state.photos.forEach(p => {
+      const fresh = map.get(keyOf(p));
+      if (fresh) Object.assign(p, fresh);
+    });
+    state.counts = data.counts;
+    applyFilters(captureAnchor());
+    syncSelection();
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+
+  function toast(msg, actionLabel, fn) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    if (actionLabel) {
+      const b = document.createElement('button');
+      b.className = 'toast-action';
+      b.textContent = actionLabel;
+      b.onclick = async () => { el.classList.remove('show'); await fn(); };
+      el.appendChild(b);
+    }
+    el.classList.add('show');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove('show'), actionLabel ? 8000 : 2500);
+  }
+
+  // ── Shortcuts ─────────────────────────────────────────────────────────────
+
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('input, textarea, select')) return;
+    if (e.key === 'Escape') clearSelection();
+    if ((e.key === 'Backspace' || e.key === 'Delete') && state.selected.size) {
+      e.preventDefault(); deleteSelected();
+    }
+  });
+
+  let searchTimer = null;
+  document.getElementById('search').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(applyFilters, 250);
+  });
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+
+  const sel = document.getElementById('person');
+  NAMES.forEach(n => sel.appendChild(Object.assign(document.createElement('option'),
+    { value: n.toLowerCase(), textContent: n })));
+  const syncExports = () => {
+    document.getElementById('export-photos').href =
+      `${API}/grid/export.csv?set_id=${SET_ID}&only=${state.only}`;
+    document.getElementById('export-chat').href = `${API}/groups/export.csv?set_id=${SET_ID}`;
+  };
+  syncExports();
+  load();
+</script>
+</body>
+</html>
