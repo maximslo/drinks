@@ -1120,24 +1120,48 @@ def bulk_create_groups(body: BulkGroups):
     return {"created": len(made), "ids": made}
 
 
+def _note_people(note):
+    """'hunter, 1, cocktail\nmiggy, 1, cocktail' -> 'hunter, miggy'.
+
+    Keeps the name from every line (the bit before the first comma) in order,
+    dropping the amount and drink type. A repeated name is listed once. A line
+    that isn't in `person, amount, drink` shape is passed through untouched so
+    nothing is ever silently lost.
+    """
+    people = []
+    for line in (note or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split(",")]
+        name = parts[0] if (len(parts) == 3 and parts[1].isdigit()) else line
+        if name and name not in people:
+            people.append(name)
+    return ", ".join(people)
+
+
 @app.get("/grid/export.csv")
-def export_photo_annotations(set_id: int = 3, only: str = "annotated", chat_id: str = None):
-    """One row per photo: the file, who sent it, and its annotation. No chat history."""
+def export_photo_annotations(set_id: int = 3, chat_id: str = None):
+    """One row per *annotated* photo: the file, who sent it, and its annotation.
+
+    Always the annotated set, whatever the grid is filtered to: unannotated photos
+    and ones whose annotation link was removed are never exported.
+    """
     import csv
     import io
     from fastapi.responses import Response
 
-    data = grid(set_id=set_id, only=only, chat_id=chat_id)
+    data = grid(set_id=set_id, only="annotated", chat_id=chat_id)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["photo", "message_rowid", "photo_idx", "sent_at", "sender", "chat_id",
-                "message_text", "entry_id", "annotation", "solo", "file_present"])
+                "message_text", "entry_id", "people", "solo", "file_present"])
     for p in data["photos"]:
         suffix = "" if p["idx"] == 0 else f"_{p['idx']}"
         label = p["label"] if p["label"] is not None else (
             f"unlabeled-{p['entry_id']}" if p["entry_id"] else "")
         w.writerow([f"{p['rowid']}{suffix}", p["rowid"], p["idx"], p["sent_at"], p["name"],
-                    p["chat_id"], p["text"] or "", label, p["note"] or "",
+                    p["chat_id"], p["text"] or "", label, _note_people(p["note"]),
                     "true" if p["solo"] else ("false" if p["entry_id"] else ""),
                     "true" if p["has_file"] else "false"])
     return Response(content=buf.getvalue(), media_type="text/csv", headers={
@@ -1169,3 +1193,61 @@ def unlink_photos(body: PhotoLinks):
     ).fetchone()[0]
     conn.close()
     return {"photos": len(body.photos), "detached": body.detached, "total_unlinked": n}
+
+
+@app.get("/grid/repeated")
+def repeated_name_entries(set_id: int = 3):
+    """Entries whose note names the same person on more than one line.
+
+    Powers the review page for those cases. Unlike /grid this includes photos whose
+    link was unlinked, since most of these entries are already out of the main grid.
+    """
+    ann = get_annotations_db()
+    labels = _entry_labels(ann, set_id)
+    groups = {g["id"]: g for g in ann.execute(
+        "SELECT * FROM groups WHERE set_id = ?", (set_id,)).fetchall()}
+    members = {}
+    for gid, rowid, idx, detached in ann.execute(
+            "SELECT group_id, message_rowid, idx, detached FROM group_messages WHERE set_id = ?",
+            (set_id,)):
+        members.setdefault(gid, []).append((rowid, idx, detached))
+    ann.close()
+
+    wanted = {}
+    for gid, g in groups.items():
+        names = [l.split(",")[0].strip().lower()
+                 for l in (g["note"] or "").splitlines() if l.strip()]
+        repeats = {n: c for n, c in {n: names.count(n) for n in names}.items() if c > 1}
+        if repeats:
+            wanted[gid] = repeats
+    if not wanted:
+        return {"set_id": set_id, "entries": []}
+
+    conn = get_messages_db()
+    out = []
+    for gid, repeats in wanted.items():
+        g = groups[gid]
+        photos = []
+        for rowid, idx, detached in sorted(members.get(gid, [])):
+            row = conn.execute("""
+                SELECT m.sent_at, m.is_from_me, m.phone, m.text, a.path, a.mime
+                FROM messages m
+                LEFT JOIN attachments a ON a.message_rowid = m.rowid AND a.idx = ?
+                WHERE m.rowid = ?
+            """, (idx, rowid)).fetchone()
+            if not row or not row["path"]:
+                continue        # the number-text half of an entry has no photo
+            photos.append({
+                "rowid": rowid, "idx": idx, "detached": bool(detached),
+                "sent_at": row["sent_at"], "text": (row["text"] or "").strip() or None,
+                "name": "Maxim" if row["is_from_me"] else PHONE_TO_NAME.get(row["phone"], row["phone"]),
+                "is_video": (row["mime"] or "").startswith("video/"),
+                "has_file": os.path.exists(os.path.join(DATA_DIR, row["path"])),
+            })
+        out.append({
+            "entry_id": gid, "label": labels.get(gid), "note": g["note"],
+            "solo": g["solo"], "repeats": repeats, "photos": photos,
+        })
+    conn.close()
+    out.sort(key=lambda e: (e["photos"][0]["sent_at"] if e["photos"] else ""), reverse=True)
+    return {"set_id": set_id, "entries": out}

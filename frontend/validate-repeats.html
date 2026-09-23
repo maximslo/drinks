@@ -1,0 +1,261 @@
+<!--
+  HOW TO RUN:
+       http://localhost:8000/ui/validate-repeats.html
+
+  The 79 set-3 entries whose note names the same person on more than one line
+  (e.g. "marek, 2, beer" + "marek, 1, cocktail"). Photo + editable note side by
+  side so you can see what is going on and fix them. Unlike the main grid this
+  also shows photos you have already unlinked, with a Relink button.
+
+    ⌘↵        save the note you are editing
+    the note box saves on blur too
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Repeated Names</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f5f7; color: #1c1c1e; height: 100vh;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  #toolbar {
+    background: #fff; border-bottom: 1px solid #e5e5ea; padding: 10px 16px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  #toolbar h1 { font-size: 16px; font-weight: 600; }
+  .sub { font-size: 12px; color: #8e8e93; }
+  .spacer { flex: 1; }
+
+  .btn {
+    border: 1px solid #d1d1d6; background: #fff; border-radius: 16px; padding: 5px 14px;
+    font-size: 13px; cursor: pointer; color: #1c1c1e; white-space: nowrap;
+  }
+  .btn:hover { background: #f2f2f7; }
+  .btn.primary { background: #0B84FE; border-color: #0B84FE; color: #fff; }
+  .btn.on { background: #5b3fd6; border-color: #5b3fd6; color: #fff; }
+  #chips { display: inline-flex; }
+  #chips .btn { border-radius: 0; }
+  #chips .btn:first-child { border-radius: 16px 0 0 16px; }
+  #chips .btn:last-child { border-radius: 0 16px 16px 0; margin-left: -1px; }
+
+  #grid {
+    flex: 1; overflow-y: auto; padding: 16px;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    grid-auto-rows: 320px;           /* fixed: Chrome collapses auto rows past ~500 items */
+    gap: 14px; align-content: start;
+  }
+
+  .card {
+    background: #fff; border: 1px solid #e5e5ea; border-radius: 12px; overflow: hidden;
+    display: grid; grid-template-columns: 200px 1fr;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+  }
+  .card.unlinked { border-color: #f0c9c5; background: #fffaf9; }
+  .card.saved { border-color: #1a7f37; }
+
+  .shot, .missing { width: 100%; height: 100%; object-fit: cover; display: block; background: #e5e5ea; cursor: zoom-in; }
+  .missing { display: flex; align-items: center; justify-content: center; color: #8e8e93; font-size: 26px; }
+
+  .side { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .head { font-size: 11px; color: #8e8e93; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .tag { background: #1c1c1e; color: #fff; font-weight: 700; border-radius: 8px; padding: 1px 6px; font-size: 10px; }
+  .tag.warn { background: #b26a00; }
+  .tag.off { background: #d93025; }
+  .tag.solo { background: #1a7f37; }
+
+  textarea {
+    flex: 1; width: 100%; font: inherit; font-size: 13px; line-height: 1.45;
+    padding: 8px; border: 1px solid #d1d1d6; border-radius: 8px; resize: none;
+    background: #fffbea; outline: none;
+  }
+  textarea:focus { border-color: #0B84FE; background: #fff; }
+  .actions { display: flex; align-items: center; gap: 8px; }
+  .actions .btn { padding: 4px 10px; font-size: 12px; }
+  .note-hint { font-size: 11px; color: #a0a0a5; }
+
+  #lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 900;
+              align-items: center; justify-content: center; cursor: zoom-out; }
+  #lightbox.open { display: flex; }
+  #lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 6px; }
+
+  #status { grid-column: 1 / -1; padding: 40px; text-align: center; color: #8e8e93; }
+  #toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    background: #1c1c1e; color: #fff; font-size: 13px; padding: 9px 16px; border-radius: 10px;
+    opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 950;
+  }
+  #toast.show { opacity: .94; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>🔁 Repeated names</h1>
+  <span class="sub" id="summary">Loading…</span>
+  <span id="chips">
+    <button class="btn on" data-f="all" onclick="setFilter('all')">All</button>
+    <button class="btn" data-f="linked" onclick="setFilter('linked')">In export</button>
+    <button class="btn" data-f="unlinked" onclick="setFilter('unlinked')">Unlinked</button>
+  </span>
+  <span class="spacer"></span>
+  <a class="btn" style="text-decoration:none" href="validate.html">← Validation grid</a>
+  <a class="btn" style="text-decoration:none" href="messages-notes.html">Notes page</a>
+</div>
+
+<div id="grid"><div id="status">Loading…</div></div>
+<div id="lightbox" onclick="this.classList.remove('open')"><img id="lightbox-img" alt=""></div>
+<div id="toast"></div>
+
+<script>
+  const API = window.location.origin.includes('localhost') ? 'http://localhost:8000' : '';
+  const SET_ID = 3;
+  const state = { entries: [], filter: 'all' };
+
+  async function api(method, path, body) {
+    const res = await fetch(`${API}${path}`, {
+      method, headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) { toast(`${method} ${path} failed (${res.status})`); throw new Error(res.status); }
+    return res.json();
+  }
+
+  async function load() {
+    const data = await api('GET', `/grid/repeated?set_id=${SET_ID}`);
+    state.entries = data.entries;
+    render();
+  }
+
+  function visible() {
+    return state.entries.filter(e => {
+      const unlinked = e.photos.every(p => p.detached);
+      if (state.filter === 'linked') return !unlinked;
+      if (state.filter === 'unlinked') return unlinked;
+      return true;
+    });
+  }
+
+  function render() {
+    const grid = document.getElementById('grid');
+    const rows = visible();
+    grid.innerHTML = '';
+    rows.forEach(e => e.photos.forEach(p => grid.appendChild(buildCard(e, p))));
+    if (!rows.length) grid.innerHTML = '<div id="status">Nothing here.</div>';
+    const linked = state.entries.filter(e => e.photos.some(p => !p.detached)).length;
+    document.getElementById('summary').textContent =
+      `${state.entries.length} entries · ${linked} still in the photo export · showing ${rows.length}`;
+  }
+
+  function buildCard(e, p) {
+    const card = document.createElement('div');
+    card.className = 'card' + (p.detached ? ' unlinked' : '');
+
+    if (p.has_file) {
+      const img = document.createElement('img');
+      img.className = 'shot'; img.loading = 'lazy';
+      img.src = `${API}/thumb/${p.rowid}/${p.idx}`;
+      img.onclick = () => {
+        document.getElementById('lightbox-img').src = `${API}/attachment/${p.rowid}/${p.idx}`;
+        document.getElementById('lightbox').classList.add('open');
+      };
+      card.appendChild(img);
+    } else {
+      card.appendChild(Object.assign(document.createElement('div'),
+        { className: 'missing', textContent: '📷' }));
+    }
+
+    const side = document.createElement('div');
+    side.className = 'side';
+
+    const head = document.createElement('div');
+    head.className = 'head';
+    const repeats = Object.entries(e.repeats).map(([n, c]) => `${n} ×${c}`).join(', ');
+    head.innerHTML = `<span class="tag">#${e.label ?? '?'}</span>
+      <span class="tag warn">${repeats}</span>
+      ${p.detached ? '<span class="tag off">unlinked</span>' : ''}
+      ${e.solo ? '<span class="tag solo">solo</span>' : ''}
+      <span>${new Date(p.sent_at.replace(' ', 'T') + 'Z').toLocaleDateString('en-US',
+        { month: 'short', day: 'numeric', year: 'numeric' })} · ${p.name}${p.text ? ' · “' + p.text.slice(0, 22) + '”' : ''}</span>`;
+    side.appendChild(head);
+
+    const ta = document.createElement('textarea');
+    ta.value = e.note;
+    ta.spellcheck = false;
+    const save = async () => {
+      if (ta.value === e.note) return;
+      const g = await api('PATCH', `/groups/${e.entry_id}`, { note: ta.value });
+      e.note = g.note;
+      e.repeats = recount(g.note);
+      card.classList.add('saved');
+      setTimeout(() => card.classList.remove('saved'), 1200);
+      toast('Saved');
+      head.querySelector('.tag.warn').textContent =
+        Object.entries(e.repeats).map(([n, c]) => `${n} ×${c}`).join(', ') || 'no repeats';
+    };
+    ta.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); save(); }
+    });
+    ta.addEventListener('blur', save);
+    side.appendChild(ta);
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn primary'; saveBtn.textContent = 'Save';
+    saveBtn.onclick = save;
+    actions.appendChild(saveBtn);
+
+    const link = document.createElement('button');
+    link.className = 'btn';
+    link.textContent = p.detached ? 'Relink photo' : 'Unlink photo';
+    link.onclick = async () => {
+      await api('POST', '/grid/unlink', {
+        set_id: SET_ID, photos: [[p.rowid, p.idx]], detached: !p.detached,
+      });
+      p.detached = !p.detached;
+      toast(p.detached ? 'Unlinked' : 'Relinked');
+      render();
+    };
+    actions.appendChild(link);
+    actions.appendChild(Object.assign(document.createElement('span'),
+      { className: 'note-hint', textContent: '⌘↵ or click away to save' }));
+    side.appendChild(actions);
+
+    card.appendChild(side);
+    return card;
+  }
+
+  function recount(note) {
+    const names = (note || '').split('\n').map(l => l.split(',')[0].trim().toLowerCase()).filter(Boolean);
+    const out = {};
+    names.forEach(n => { out[n] = (out[n] || 0) + 1; });
+    Object.keys(out).forEach(n => { if (out[n] < 2) delete out[n]; });
+    return out;
+  }
+
+  function setFilter(f) {
+    state.filter = f;
+    document.querySelectorAll('#chips .btn').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+    render();
+  }
+
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.classList.add('show');
+    clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('show'), 2000);
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.getElementById('lightbox').classList.remove('open');
+  });
+
+  load();
+</script>
+</body>
+</html>

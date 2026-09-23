@@ -571,8 +571,8 @@
   NAMES.forEach(n => sel.appendChild(Object.assign(document.createElement('option'),
     { value: n.toLowerCase(), textContent: n })));
   const syncExports = () => {
-    document.getElementById('export-photos').href =
-      `${API}/grid/export.csv?set_id=${SET_ID}&only=${state.only}`;
+    // always the annotated photos, whatever the grid is filtered to
+    document.getElementById('export-photos').href = `${API}/grid/export.csv?set_id=${SET_ID}`;
     document.getElementById('export-chat').href = `${API}/groups/export.csv?set_id=${SET_ID}`;
   };
   syncExports();
